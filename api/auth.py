@@ -31,7 +31,12 @@ def set_session_cookie(response: Response, token: str) -> None:
 
 
 def clear_session_cookie(response: Response) -> None:
-    response.delete_cookie(SESSION_COOKIE)
+    response.delete_cookie(
+        SESSION_COOKIE,
+        httponly=True,
+        samesite="lax",
+        secure=settings.production,
+    )
 
 
 def is_authenticated(request: Request) -> bool:
