@@ -14,6 +14,7 @@ from api.auth import (
     verify_pin,
 )
 from api.portfolio import router as portfolio_router
+from config import settings
 from db.database import init_db
 
 logging.basicConfig(level=logging.INFO)
@@ -31,6 +32,13 @@ class LoginRequest(BaseModel):
 @app.on_event("startup")
 def on_startup() -> None:
     init_db()
+    logger = logging.getLogger("brain")
+    logger.info(
+        "Brain started (production=%s, mock=%s, snaptrade=%s)",
+        settings.production,
+        settings.mock_integrations,
+        bool(settings.snaptrade_client_id and settings.snaptrade_consumer_key),
+    )
 
 
 @app.post("/api/login")

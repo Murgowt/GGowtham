@@ -1,3 +1,4 @@
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -8,7 +9,7 @@ class Settings(BaseSettings):
     secret_key: str = "dev-secret-change-in-production"
     production: bool = False
 
-    mock_integrations: bool = True
+    mock_integrations: bool = False
     database_url: str = "sqlite:///./brain.db"
     portfolio_cache_minutes: int = 15
 
@@ -18,6 +19,16 @@ class Settings(BaseSettings):
     snaptrade_user_secret: str = ""
 
     app_base_url: str = "http://localhost:8000"
+
+    @model_validator(mode="after")
+    def disable_mock_when_snaptrade_configured(self) -> "Settings":
+        if (
+            self.mock_integrations
+            and self.snaptrade_client_id
+            and self.snaptrade_consumer_key
+        ):
+            self.mock_integrations = False
+        return self
 
 
 settings = Settings()
