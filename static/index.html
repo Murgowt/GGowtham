@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Brain">
+  <meta name="theme-color" content="#07070c">
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="apple-touch-icon" href="/static/icon-192.png">
+  <link rel="stylesheet" href="/static/style.css">
+  <title>Brain</title>
+</head>
+<body>
+  <div id="app">
+    <section id="login-screen" class="screen hidden">
+      <div class="login-content">
+        <div class="brand-mark lg">B</div>
+        <div class="logo">Brain</div>
+        <p class="subtitle">Your Robinhood portfolio</p>
+        <form id="login-form">
+          <input type="password" id="pin-input" inputmode="numeric" pattern="[0-9]*" placeholder="PIN" autocomplete="current-password" required>
+          <button type="submit" class="btn primary">Unlock</button>
+        </form>
+        <p id="login-error" class="error hidden"></p>
+      </div>
+    </section>
+
+    <section id="portfolio-screen" class="screen hidden">
+      <header class="header">
+        <div class="brand">
+          <div class="brand-mark">B</div>
+          <div>
+            <h1>Brain</h1>
+            <p class="subtitle">Robinhood</p>
+          </div>
+        </div>
+        <button id="refresh-btn" class="btn icon" aria-label="Refresh">
+          <svg class="refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12a9 9 0 1 1-2.64-6.36"/>
+            <polyline points="21 3 21 9 15 9"/>
+          </svg>
+        </button>
+      </header>
+
+      <div class="hero-card">
+        <span class="hero-label">Portfolio value</span>
+        <span id="total-value" class="hero-value">—</span>
+        <div id="hero-pnl" class="hero-pnl hidden">
+          <span id="total-pnl" class="pnl-badge"></span>
+          <span id="total-pnl-pct" class="pnl-pct"></span>
+        </div>
+      </div>
+
+      <div class="metrics-row">
+        <div class="metric">
+          <span class="metric-label">Invested</span>
+          <span id="total-invested" class="metric-value">—</span>
+        </div>
+        <div class="metric-divider"></div>
+        <div class="metric">
+          <span class="metric-label">Return</span>
+          <span id="total-return-pct" class="metric-value">—</span>
+        </div>
+        <div class="metric-divider"></div>
+        <div class="metric">
+          <span class="metric-label">Holdings</span>
+          <span id="holdings-count" class="metric-value">—</span>
+        </div>
+      </div>
+
+      <div id="connect-banner" class="connect-banner hidden">
+        <p>Connect Robinhood to see your holdings.</p>
+        <button id="connect-btn" class="btn primary">Connect Robinhood</button>
+      </div>
+
+      <div class="holdings-section">
+        <h2 class="section-title">Holdings</h2>
+        <ul id="holdings-list" class="holdings"></ul>
+      </div>
+
+      <footer class="footer">
+        <span id="status" class="status-pill">
+          <span class="status-dot"></span>
+          <span id="status-text"></span>
+        </span>
+        <p id="updated-at" class="updated-at"></p>
+      </footer>
+    </section>
+
+    <div id="loading" class="loading hidden">
+      <div class="spinner"></div>
+    </div>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
