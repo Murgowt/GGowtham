@@ -110,6 +110,51 @@ body {
   line-height: 1.2;
 }
 
+.header-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.header-spacer {
+  width: 40px;
+  flex-shrink: 0;
+}
+
+.settings-title {
+  flex: 1;
+  text-align: center;
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+
+.settings-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.settings-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.settings-section-header .section-title {
+  padding-left: 0;
+  margin: 0;
+}
+
+.settings-desc {
+  color: var(--muted);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
 /* Buttons */
 .btn {
   border: none;
@@ -157,12 +202,12 @@ body {
   flex-shrink: 0;
 }
 
-.btn.icon .refresh-icon {
+.btn.icon .icon-svg {
   width: 18px;
   height: 18px;
 }
 
-.btn.icon.refreshing .refresh-icon {
+.btn.icon.refreshing .icon-svg {
   animation: spin 0.8s linear infinite;
 }
 
@@ -334,14 +379,9 @@ body {
   line-height: 1.45;
 }
 
-.notifications-panel {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 1rem;
+.settings-section .notifications-actions {
   display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.5rem;
 }
 
 .notifications-header {

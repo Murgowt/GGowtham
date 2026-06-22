@@ -1,12 +1,16 @@
 const loginScreen = document.getElementById("login-screen");
 const portfolioScreen = document.getElementById("portfolio-screen");
+const settingsScreen = document.getElementById("settings-screen");
 const loginForm = document.getElementById("login-form");
 const pinInput = document.getElementById("pin-input");
 const loginError = document.getElementById("login-error");
 const refreshBtn = document.getElementById("refresh-btn");
+const settingsBtn = document.getElementById("settings-btn");
+const settingsBackBtn = document.getElementById("settings-back-btn");
 const connectBtn = document.getElementById("connect-btn");
 const connectBanner = document.getElementById("connect-banner");
 const notificationsPanel = document.getElementById("notifications-panel");
+const notificationsUnavailable = document.getElementById("notifications-unavailable");
 const notificationsStatus = document.getElementById("notifications-status");
 const notificationsHint = document.getElementById("notifications-hint");
 const enableNotificationsBtn = document.getElementById("enable-notifications-btn");
@@ -159,17 +163,36 @@ function renderPortfolio(data) {
   updatedAtEl.textContent = `Updated ${formatTime(data.updated_at)}`;
 }
 
-async function initNotifications() {
+function showPortfolio() {
+  hide(settingsScreen);
+  show(portfolioScreen);
+}
+
+function showSettings() {
+  hide(portfolioScreen);
+  show(settingsScreen);
+  loadNotificationsSettings();
+}
+
+async function loadNotificationsSettings() {
+  hide(notificationsPanel);
+  hide(notificationsUnavailable);
+  hide(notificationsHint);
+
   if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+    show(notificationsUnavailable);
+    notificationsUnavailable.textContent = "Notifications are not supported in this browser.";
     return;
   }
 
   try {
     const config = await api("/api/notifications/config");
-    if (!config.enabled || !config.vapid_public_key) return;
+    if (!config.enabled || !config.vapid_public_key) {
+      show(notificationsUnavailable);
+      return;
+    }
 
     show(notificationsPanel);
-
     const status = await api("/api/notifications/status");
     updateNotificationsUI(status.subscribed);
 
@@ -179,7 +202,7 @@ async function initNotifications() {
         "For iPhone notifications, open Brain from your Home Screen app (not Safari).";
     }
   } catch {
-    // Notifications optional — ignore errors
+    show(notificationsUnavailable);
   }
 }
 
@@ -308,16 +331,16 @@ async function checkAuth() {
     const { authenticated } = await api("/api/me");
     if (authenticated) {
       hide(loginScreen);
-      show(portfolioScreen);
+      showPortfolio();
       if (new URLSearchParams(window.location.search).get("connected") === "1") {
         window.history.replaceState({}, "", "/");
       }
       await registerServiceWorker();
       await loadPortfolio(true);
-      await initNotifications();
     } else {
       show(loginScreen);
       hide(portfolioScreen);
+      hide(settingsScreen);
     }
   } catch {
     show(loginScreen);
@@ -335,10 +358,9 @@ loginForm.addEventListener("submit", async (e) => {
     await api("/api/login", { method: "POST", body: JSON.stringify({ pin: pinInput.value }) });
     pinInput.value = "";
     hide(loginScreen);
-    show(portfolioScreen);
+    showPortfolio();
     await registerServiceWorker();
     await loadPortfolio();
-    await initNotifications();
   } catch {
     show(loginError);
     loginError.textContent = "Invalid PIN";
@@ -348,6 +370,8 @@ loginForm.addEventListener("submit", async (e) => {
 });
 
 refreshBtn.addEventListener("click", () => loadPortfolio(true));
+settingsBtn.addEventListener("click", showSettings);
+settingsBackBtn.addEventListener("click", showPortfolio);
 connectBtn.addEventListener("click", connectRobinhood);
 enableNotificationsBtn.addEventListener("click", enableNotifications);
 testNotificationBtn.addEventListener("click", sendTestNotification);
