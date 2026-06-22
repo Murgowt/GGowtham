@@ -20,6 +20,11 @@ class Settings(BaseSettings):
 
     app_base_url: str = "http://localhost:8000"
 
+    notifications_enabled: bool = False
+    vapid_public_key: str = ""
+    vapid_private_key: str = ""
+    vapid_subject: str = ""
+
     @model_validator(mode="after")
     def disable_mock_when_snaptrade_configured(self) -> "Settings":
         if (

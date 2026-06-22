@@ -6,3 +6,4 @@ SQLAlchemy>=2.0.23
 pydantic-settings>=2.0.0
 python-dotenv>=1.0.0
 itsdangerous>=2.1.0
+pywebpush>=2.0.0

@@ -75,3 +75,37 @@ Personal keys use signed API requests (not OAuth). Brain auto-discovers your Sna
 ## Cost
 
 $0 — SnapTrade Free plan (1 user) + Railway free tier.
+
+## Push notifications (iPhone)
+
+Requires iOS 16.4+ and Brain opened from **Home Screen** (not Safari tabs).
+
+### 1. Generate VAPID keys (once)
+
+```bash
+npx web-push generate-vapid-keys
+```
+
+Add to `.env` and Railway:
+
+```bash
+NOTIFICATIONS_ENABLED=true
+VAPID_PUBLIC_KEY=your-public-key
+VAPID_PRIVATE_KEY=your-private-key
+VAPID_SUBJECT=mailto:you@example.com
+```
+
+### 2. Enable on iPhone
+
+1. Open Brain from **Home Screen icon**
+2. Tap **Enable notifications** → Allow
+3. Tap **Send test** to verify
+
+### 3. Daily summary cron (Railway)
+
+Create a **Cron** service in Railway (or use Railway cron jobs):
+
+- **Schedule:** `30 21 * * 1-5` (4:30 PM ET weekdays)
+- **Command:** `python -m jobs.daily_summary`
+
+Sends portfolio value + P&L once per day after US market close.

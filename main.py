@@ -13,6 +13,7 @@ from api.auth import (
     set_session_cookie,
     verify_pin,
 )
+from api.notifications import router as notifications_router
 from api.portfolio import router as portfolio_router
 from config import settings
 from db.database import init_db
@@ -23,6 +24,7 @@ app = FastAPI(title="Brain", version="1.0.0")
 STATIC_DIR = Path(__file__).parent / "static"
 
 app.include_router(portfolio_router)
+app.include_router(notifications_router)
 
 
 class LoginRequest(BaseModel):
@@ -64,6 +66,15 @@ def me(request: Request):
 @app.get("/")
 def index():
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/sw.js")
+def service_worker():
+    return FileResponse(
+        STATIC_DIR / "sw.js",
+        media_type="application/javascript",
+        headers={"Service-Worker-Allowed": "/"},
+    )
 
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

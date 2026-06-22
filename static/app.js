@@ -6,6 +6,11 @@ const loginError = document.getElementById("login-error");
 const refreshBtn = document.getElementById("refresh-btn");
 const connectBtn = document.getElementById("connect-btn");
 const connectBanner = document.getElementById("connect-banner");
+const notificationsPanel = document.getElementById("notifications-panel");
+const notificationsStatus = document.getElementById("notifications-status");
+const notificationsHint = document.getElementById("notifications-hint");
+const enableNotificationsBtn = document.getElementById("enable-notifications-btn");
+const testNotificationBtn = document.getElementById("test-notification-btn");
 const loading = document.getElementById("loading");
 const holdingsList = document.getElementById("holdings-list");
 const holdingsCountEl = document.getElementById("holdings-count");
@@ -51,6 +56,18 @@ function tickerBadge(ticker) {
   return ticker.length <= 4 ? ticker : ticker.slice(0, 3);
 }
 
+function isStandalone() {
+  return window.matchMedia("(display-mode: standalone)").matches
+    || window.navigator.standalone === true;
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(base64);
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+}
+
 async function api(path, options = {}) {
   const res = await fetch(path, {
     credentials: "same-origin",
@@ -67,6 +84,11 @@ async function api(path, options = {}) {
     throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
   }
   return data;
+}
+
+async function registerServiceWorker() {
+  if (!("serviceWorker" in navigator)) return null;
+  return navigator.serviceWorker.register("/sw.js", { scope: "/" });
 }
 
 function clearSummary() {
@@ -137,6 +159,102 @@ function renderPortfolio(data) {
   updatedAtEl.textContent = `Updated ${formatTime(data.updated_at)}`;
 }
 
+async function initNotifications() {
+  if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+    return;
+  }
+
+  try {
+    const config = await api("/api/notifications/config");
+    if (!config.enabled || !config.vapid_public_key) return;
+
+    show(notificationsPanel);
+
+    const status = await api("/api/notifications/status");
+    updateNotificationsUI(status.subscribed);
+
+    if (!isStandalone()) {
+      show(notificationsHint);
+      notificationsHint.textContent =
+        "For iPhone notifications, open Brain from your Home Screen app (not Safari).";
+    }
+  } catch {
+    // Notifications optional — ignore errors
+  }
+}
+
+function updateNotificationsUI(subscribed) {
+  if (subscribed) {
+    notificationsStatus.textContent = "On";
+    notificationsStatus.classList.add("on");
+    enableNotificationsBtn.textContent = "Notifications enabled";
+    enableNotificationsBtn.disabled = true;
+    show(testNotificationBtn);
+  } else {
+    notificationsStatus.textContent = "Off";
+    notificationsStatus.classList.remove("on");
+    enableNotificationsBtn.textContent = "Enable notifications";
+    enableNotificationsBtn.disabled = false;
+    hide(testNotificationBtn);
+  }
+}
+
+async function enableNotifications() {
+  if (!isStandalone()) {
+    notificationsHint.textContent =
+      "Add Brain to your Home Screen, open it from the icon, then enable notifications.";
+    show(notificationsHint);
+    return;
+  }
+
+  setLoading(true);
+  try {
+    await registerServiceWorker();
+    const config = await api("/api/notifications/config");
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") {
+      notificationsHint.textContent = "Notification permission denied. Enable in iOS Settings → Brain.";
+      show(notificationsHint);
+      return;
+    }
+
+    const registration = await navigator.serviceWorker.ready;
+    let subscription = await registration.pushManager.getSubscription();
+    if (!subscription) {
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(config.vapid_public_key),
+      });
+    }
+
+    await api("/api/notifications/subscribe", {
+      method: "POST",
+      body: JSON.stringify({ subscription: subscription.toJSON() }),
+    });
+    updateNotificationsUI(true);
+    hide(notificationsHint);
+  } catch (err) {
+    notificationsHint.textContent = err.message;
+    show(notificationsHint);
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function sendTestNotification() {
+  setLoading(true);
+  try {
+    await api("/api/notifications/test", { method: "POST" });
+    notificationsHint.textContent = "Test sent — check your lock screen.";
+    show(notificationsHint);
+  } catch (err) {
+    notificationsHint.textContent = err.message;
+    show(notificationsHint);
+  } finally {
+    setLoading(false);
+  }
+}
+
 async function checkConnection() {
   const status = await api("/api/connection/status");
   if (!status.connected) {
@@ -194,7 +312,9 @@ async function checkAuth() {
       if (new URLSearchParams(window.location.search).get("connected") === "1") {
         window.history.replaceState({}, "", "/");
       }
+      await registerServiceWorker();
       await loadPortfolio(true);
+      await initNotifications();
     } else {
       show(loginScreen);
       hide(portfolioScreen);
@@ -216,7 +336,9 @@ loginForm.addEventListener("submit", async (e) => {
     pinInput.value = "";
     hide(loginScreen);
     show(portfolioScreen);
+    await registerServiceWorker();
     await loadPortfolio();
+    await initNotifications();
   } catch {
     show(loginError);
     loginError.textContent = "Invalid PIN";
@@ -227,5 +349,7 @@ loginForm.addEventListener("submit", async (e) => {
 
 refreshBtn.addEventListener("click", () => loadPortfolio(true));
 connectBtn.addEventListener("click", connectRobinhood);
+enableNotificationsBtn.addEventListener("click", enableNotifications);
+testNotificationBtn.addEventListener("click", sendTestNotification);
 
 checkAuth();

@@ -76,6 +76,18 @@
         <button id="connect-btn" class="btn primary">Connect Robinhood</button>
       </div>
 
+      <div id="notifications-panel" class="notifications-panel hidden">
+        <div class="notifications-header">
+          <h2 class="section-title">Notifications</h2>
+          <span id="notifications-status" class="notifications-badge">Off</span>
+        </div>
+        <p id="notifications-hint" class="notifications-hint hidden"></p>
+        <div class="notifications-actions">
+          <button id="enable-notifications-btn" class="btn secondary">Enable notifications</button>
+          <button id="test-notification-btn" class="btn secondary hidden">Send test</button>
+        </div>
+      </div>
+
       <div class="holdings-section">
         <h2 class="section-title">Holdings</h2>
         <ul id="holdings-list" class="holdings"></ul>
