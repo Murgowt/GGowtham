@@ -5,10 +5,12 @@ Railway cron start command: python -m jobs.trigger_daily
 Env vars:
   APP_BASE_URL  — e.g. https://your-app.up.railway.app
   CRON_SECRET   — must match web app
-  CRON_MODE     — "test" (simple ping) or "daily" (portfolio summary). Default: test
+  CRON_MODE     — "daily" (portfolio summary) or "test" (simple ping). Default: daily
 
-Production schedule (weekdays 4:30 PM ET): 30 21 * * 1-5
-Testing schedule (every 5 minutes):       */5 * * * *
+Production schedule (12:00 PM Central daily):
+  CDT (Mar–Nov): 0 17 * * *
+  CST (Nov–Mar): 0 18 * * *
+Testing schedule (every 5 minutes): */5 * * *
 """
 
 import logging
@@ -37,7 +39,7 @@ def _normalize_base_url(raw: str) -> str:
 def run_trigger(*, dry_run: bool = False) -> int:
     base_url = _normalize_base_url(os.environ.get("APP_BASE_URL", ""))
     secret = os.environ.get("CRON_SECRET", "")
-    mode = os.environ.get("CRON_MODE", "test").lower()
+    mode = os.environ.get("CRON_MODE", "daily").lower()
 
     if not base_url:
         logger.error(

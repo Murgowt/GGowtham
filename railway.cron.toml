@@ -1,0 +1,8 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "python -m jobs.trigger_daily"
+restartPolicyType = "never"
+# 12:00 PM Central (CDT) — use 0 18 * * * during CST (Nov–Mar)
+cronSchedule = "0 17 * * *"

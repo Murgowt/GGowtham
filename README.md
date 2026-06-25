@@ -115,8 +115,19 @@ Create a second **Cron** service from the same repo:
 | Config file | `/railway.cron.toml` (in service Settings) |
 | Start command | `python -m jobs.trigger_daily` (set by config file) |
 | Restart policy | **Never** |
-| Cron schedule | `30 21 * * 1-5` (4:30 PM ET weekdays, UTC) |
-| Env vars | `APP_BASE_URL`, `CRON_SECRET`, `CRON_MODE=test` (for testing) |
+| Cron schedule | `0 17 * * *` (12:00 PM Central during CDT — see below) |
+| Env vars | `APP_BASE_URL`, `CRON_SECRET`, `CRON_MODE=daily` |
+
+**12:00 PM Central (every day):** Railway cron uses UTC. Set schedule to:
+
+| Season | Central time | UTC cron |
+|--------|----------------|----------|
+| Daylight (CDT, most of Mar–Nov) | 12:00 PM | `0 17 * * *` |
+| Standard (CST, Nov–Mar) | 12:00 PM | `0 18 * * *` |
+
+Switch the hour when clocks change, or accept ±1 hour during the other season.
+
+For testing every 5 minutes, use `*/5 * * * *` and `CRON_MODE=test`.
 
 Remove any **Custom Build Command** (`npm run build`) from the cron service.
 
