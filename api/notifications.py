@@ -4,9 +4,18 @@ from pydantic import BaseModel
 from api.auth import require_auth
 from config import settings
 from db.database import delete_push_subscription, list_push_subscriptions, save_push_subscription
+from integrations.daily_summary import send_daily_summary
 from integrations.webpush import is_configured, send_to_subscription
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
+
+
+def require_cron_secret(request: Request) -> None:
+    if not settings.cron_secret:
+        raise HTTPException(status_code=503, detail="Cron secret not configured")
+    provided = request.headers.get("X-Cron-Secret")
+    if not provided or provided != settings.cron_secret:
+        raise HTTPException(status_code=401, detail="Invalid cron secret")
 
 
 class SubscribeRequest(BaseModel):
@@ -75,3 +84,18 @@ def test_notification(request: Request):
     if sent == 0:
         raise HTTPException(status_code=503, detail="Failed to send test notification")
     return {"ok": True, "sent": sent}
+
+
+@router.post("/cron/daily")
+def cron_daily_summary(request: Request):
+    """Called by Railway cron — must hit the web app (not a separate DB)."""
+    require_cron_secret(request)
+    if not is_configured():
+        raise HTTPException(status_code=503, detail="Push notifications not configured")
+    try:
+        result = send_daily_summary()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Failed to send daily summary") from exc
+    return {"ok": True, **result}

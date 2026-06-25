@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     vapid_private_key: str = ""
     vapid_subject: str = ""
 
+    cron_secret: str = ""
+
     @model_validator(mode="after")
     def disable_mock_when_snaptrade_configured(self) -> "Settings":
         if (

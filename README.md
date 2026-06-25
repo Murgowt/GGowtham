@@ -93,19 +93,38 @@ NOTIFICATIONS_ENABLED=true
 VAPID_PUBLIC_KEY=your-public-key
 VAPID_PRIVATE_KEY=your-private-key
 VAPID_SUBJECT=mailto:you@example.com
+CRON_SECRET=generate-a-long-random-string
 ```
 
 ### 2. Enable on iPhone
 
 1. Open Brain from **Home Screen icon**
-2. Tap **Enable notifications** → Allow
+2. Settings (gear) → **Enable notifications** → Allow
 3. Tap **Send test** to verify
 
 ### 3. Daily summary cron (Railway)
 
-Create a **Cron** service in Railway (or use Railway cron jobs):
+Push subscriptions live on the **web app’s database**. A separate cron container has its own empty SQLite file, so the cron job must **call the web app** instead of running `daily_summary` locally.
 
-- **Schedule:** `30 21 * * 1-5` (4:30 PM ET weekdays)
-- **Command:** `python -m jobs.daily_summary`
+**On your main web service**, add `CRON_SECRET` (same value on both services).
 
-Sends portfolio value + P&L once per day after US market close.
+Create a second **Cron** service from the same repo:
+
+| Setting | Value |
+|---------|--------|
+| Start command | `python -m jobs.trigger_daily` |
+| Cron schedule | `30 21 * * 1-5` (4:30 PM ET weekdays, UTC) |
+| Env vars | `APP_BASE_URL`, `CRON_SECRET` only (plus shared vars if needed) |
+
+`trigger_daily` POSTs to `/api/notifications/cron/daily` on your web app, which reads subscriptions and sends the push.
+
+**Test manually:** Railway → cron service → Deploy, then check logs for `Response 200`.
+
+**Test every 5 minutes:** set cron schedule to `*/5 * * * *` (Railway minimum interval). Switch back to `30 21 * * 1-5` when done testing.
+
+**Or from terminal:**
+
+```bash
+curl -X POST "https://your-app.up.railway.app/api/notifications/cron/daily" \
+  -H "X-Cron-Secret: your-cron-secret"
+```
