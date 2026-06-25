@@ -1,14 +1,14 @@
-"""Trigger daily summary on the web app via HTTP (for Railway cron service).
-
-The cron service has a separate SQLite file and cannot see push subscriptions.
-This script calls the main Brain app, which owns the subscription database.
+"""Trigger push notification on the web app via HTTP (for Railway cron service).
 
 Railway cron start command: python -m jobs.trigger_daily
 
+Env vars:
+  APP_BASE_URL  — e.g. https://your-app.up.railway.app
+  CRON_SECRET   — must match web app
+  CRON_MODE     — "test" (simple ping) or "daily" (portfolio summary). Default: test
+
 Production schedule (weekdays 4:30 PM ET): 30 21 * * 1-5
 Testing schedule (every 5 minutes):       */5 * * * *
-
-Requires env vars: APP_BASE_URL, CRON_SECRET
 """
 
 import logging
@@ -24,12 +24,16 @@ logger = logging.getLogger("brain.trigger_daily")
 def main() -> int:
     base_url = os.environ.get("APP_BASE_URL", "").rstrip("/")
     secret = os.environ.get("CRON_SECRET", "")
+    mode = os.environ.get("CRON_MODE", "test").lower()
 
     if not base_url or not secret:
         logger.error("APP_BASE_URL and CRON_SECRET are required")
         return 1
 
-    url = f"{base_url}/api/notifications/cron/daily"
+    path = "cron/test" if mode == "test" else "cron/daily"
+    url = f"{base_url}/api/notifications/{path}"
+    logger.info("Calling %s (CRON_MODE=%s)", url, mode)
+
     try:
         response = httpx.post(
             url,
@@ -41,7 +45,9 @@ def main() -> int:
         return 1
 
     logger.info("Response %s: %s", response.status_code, response.text)
-    return 0 if response.is_success else 1
+    if not response.is_success:
+        return 1
+    return 0
 
 
 if __name__ == "__main__":

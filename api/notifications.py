@@ -1,13 +1,16 @@
+import logging
+
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from api.auth import require_auth
 from config import settings
 from db.database import delete_push_subscription, list_push_subscriptions, save_push_subscription
-from integrations.daily_summary import send_daily_summary
+from integrations.daily_summary import send_cron_test, send_daily_summary
 from integrations.webpush import is_configured, send_to_subscription
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
+logger = logging.getLogger(__name__)
 
 
 def require_cron_secret(request: Request) -> None:
@@ -86,6 +89,26 @@ def test_notification(request: Request):
     return {"ok": True, "sent": sent}
 
 
+@router.post("/cron/test")
+def cron_test_notification(request: Request):
+    """Cron-only test push — same path as scheduled jobs, no portfolio fetch."""
+    require_cron_secret(request)
+    if not is_configured():
+        raise HTTPException(status_code=503, detail="Push notifications not configured")
+    try:
+        result = send_cron_test()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Cron test failed")
+        raise HTTPException(status_code=503, detail=f"Cron test failed: {exc}") from exc
+    if result.get("skipped"):
+        raise HTTPException(status_code=400, detail="No push subscription on server")
+    if result["sent"] == 0:
+        raise HTTPException(status_code=503, detail="Failed to send cron test notification")
+    return {"ok": True, **result}
+
+
 @router.post("/cron/daily")
 def cron_daily_summary(request: Request):
     """Called by Railway cron — must hit the web app (not a separate DB)."""
@@ -97,5 +120,10 @@ def cron_daily_summary(request: Request):
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=503, detail="Failed to send daily summary") from exc
+        logger.exception("Daily summary failed")
+        raise HTTPException(status_code=503, detail=f"Daily summary failed: {exc}") from exc
+    if result.get("skipped"):
+        return {"ok": True, **result, "message": "No subscribers — enable notifications in app"}
+    if result["sent"] == 0:
+        raise HTTPException(status_code=503, detail="Failed to send to any subscriber")
     return {"ok": True, **result}

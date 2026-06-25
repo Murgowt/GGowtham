@@ -22,6 +22,31 @@ def format_summary(portfolio) -> str:
     )
 
 
+def _send_to_all(title: str, body: str) -> dict:
+    subs = list_push_subscriptions()
+    if not subs:
+        logger.info("No push subscriptions")
+        return {"sent": 0, "total": 0, "skipped": True}
+
+    sent = 0
+    for sub in subs:
+        if send_to_subscription(sub["subscription_json"], title=title, body=body):
+            sent += 1
+
+    return {"sent": sent, "total": len(subs), "body": body}
+
+
+def send_cron_test() -> dict:
+    from config import settings
+
+    if not settings.notifications_enabled or not is_configured():
+        raise RuntimeError("Push notifications are not configured")
+
+    result = _send_to_all("Brain", "Scheduled notification is working.")
+    logger.info("Cron test sent to %s/%s subscribers", result["sent"], result["total"])
+    return result
+
+
 def send_daily_summary() -> dict:
     from config import settings
 
@@ -33,8 +58,18 @@ def send_daily_summary() -> dict:
         logger.info("No push subscriptions — skipping daily summary")
         return {"sent": 0, "total": 0, "skipped": True}
 
-    portfolio = get_portfolio(force_refresh=True)
-    body = format_summary(portfolio)
+    body = None
+    try:
+        portfolio = get_portfolio(force_refresh=True)
+        body = format_summary(portfolio)
+    except Exception:
+        logger.warning("Live portfolio refresh failed, trying cached data", exc_info=True)
+        try:
+            portfolio = get_portfolio(force_refresh=False)
+            body = format_summary(portfolio)
+        except Exception:
+            logger.warning("Cached portfolio failed, sending generic message", exc_info=True)
+            body = "Your portfolio was updated — open Brain to view."
 
     sent = 0
     for sub in subs:
