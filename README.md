@@ -112,17 +112,26 @@ Create a second **Cron** service from the same repo:
 
 | Setting | Value |
 |---------|--------|
-| Start command | `python -m jobs.trigger_daily` |
+| Config file | `/railway.cron.toml` (in service Settings) |
+| Start command | `python -m jobs.trigger_daily` (set by config file) |
+| Restart policy | **Never** |
 | Cron schedule | `30 21 * * 1-5` (4:30 PM ET weekdays, UTC) |
-| Env vars | `APP_BASE_URL`, `CRON_SECRET` only (plus shared vars if needed) |
+| Env vars | `APP_BASE_URL`, `CRON_SECRET`, `CRON_MODE=test` (for testing) |
 
-`trigger_daily` POSTs to `/api/notifications/cron/daily` on your web app, which reads subscriptions and sends the push.
+Remove any **Custom Build Command** (`npm run build`) from the cron service.
 
-**Test manually:** Railway → cron service → Deploy, then check logs for `Response 200`.
+The repo uses `start.sh`: if the service name contains `cron`, it runs `python -m jobs.trigger_daily` and exits. Your **web** service keeps running uvicorn.
 
-**Test every 5 minutes:** set cron schedule to `*/5 * * * *` (Railway minimum interval). Switch back to `30 21 * * 1-5` when done testing.
+If deploy logs show `Uvicorn running` on **brain-cron**, the service name must include `cron` (e.g. `brain-cron`).
 
-**Or from terminal:**
+### 4. Persist data across redeploys (recommended)
+
+Railway wipes SQLite on each deploy. Add a **Volume** to your **web** service:
+
+1. Mount path: `/data`
+2. Set `DATABASE_URL=sqlite:////data/brain.db`
+
+Then push subscriptions survive redeploys. Without a volume, tap **Enable notifications** again after each deploy.
 
 ```bash
 curl -X POST "https://your-app.up.railway.app/api/notifications/cron/daily" \
