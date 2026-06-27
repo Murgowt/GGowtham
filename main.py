@@ -15,6 +15,7 @@ from api.auth import (
 )
 from api.notifications import router as notifications_router
 from api.portfolio import router as portfolio_router
+from api.spending import router as spending_router
 from config import settings
 from db.database import init_db
 
@@ -25,6 +26,7 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 app.include_router(portfolio_router)
 app.include_router(notifications_router)
+app.include_router(spending_router)
 
 
 class LoginRequest(BaseModel):
@@ -36,10 +38,11 @@ def on_startup() -> None:
     init_db()
     logger = logging.getLogger("brain")
     logger.info(
-        "Brain started (production=%s, mock=%s, snaptrade=%s)",
+        "Brain started (production=%s, mock=%s, snaptrade=%s, plaid=%s)",
         settings.production,
         settings.mock_integrations,
         bool(settings.snaptrade_client_id and settings.snaptrade_consumer_key),
+        bool(settings.plaid_client_id and settings.plaid_secret),
     )
 
 

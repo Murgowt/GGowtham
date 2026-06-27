@@ -5,8 +5,10 @@ Personal PWA that reads your Robinhood USA portfolio via [SnapTrade](https://sna
 ## Features
 
 - Read-only Robinhood holdings via SnapTrade (no Robinhood password stored)
-- PIN-protected web app
-- One-time Robinhood connect flow
+- Read-only spending: US bank + credit cards via Plaid, Splitwise via personal API key
+- Unified spending timeline tagged Bank / Card / Splitwise
+- PIN-protected web app with Invest and Spend tabs
+- One-time Robinhood connect flow; Plaid Link for bank/cards
 - Mock mode for development
 
 ## Local setup
@@ -71,10 +73,48 @@ Personal keys use signed API requests (not OAuth). Brain auto-discovers your Sna
 | `/api/connection/status` | GET | SnapTrade connection state |
 | `/api/connection/portal` | POST | Get Robinhood connect URL |
 | `/api/portfolio` | GET | Holdings (auth + connected) |
+| `/api/spending/status` | GET | Plaid/Splitwise connection state |
+| `/api/spending/transactions` | GET | Unified spending feed (`?refresh=true`, `?days=30`) |
+| `/api/plaid/link-token` | POST | Plaid Link token |
+| `/api/plaid/exchange` | POST | `{ "public_token": "..." }` after Link |
+| `/api/splitwise/configure` | POST | `{ "api_key": "..." }` personal API key |
+
+## Spending (read-only)
+
+### Plaid — bank and credit cards (US)
+
+1. Create an app at [dashboard.plaid.com](https://dashboard.plaid.com) (Sandbox first, then Production Trial for live data)
+2. Add to `.env` and Railway:
+
+```bash
+PLAID_CLIENT_ID=your-client-id
+PLAID_SECRET=your-secret
+PLAID_ENV=sandbox
+MOCK_INTEGRATIONS=false
+```
+
+3. Open Brain → **Spend** tab → Settings → **Connect bank & cards**
+4. Plaid Link supports checking, savings, and credit cards in one connection
+
+### Splitwise
+
+1. Register an app at [secure.splitwise.com/apps](https://secure.splitwise.com/apps)
+2. Generate a **personal API key** on the app details page
+3. Add to `.env` or paste in Settings → **Save Splitwise key**
+
+```bash
+SPLITWISE_API_KEY=your-key
+```
+
+### Notes
+
+- V1 shows all sources in one timeline; Splitwise entries may overlap with card charges (dedupe planned later)
+- Plaid Production Trial supports up to 10 linked accounts (enough for personal use)
+- Use the same Railway volume (`/data`) so Plaid tokens and Splitwise keys survive redeploys
 
 ## Cost
 
-$0 — SnapTrade Free plan (1 user) + Railway free tier.
+$0 — SnapTrade Free plan (1 user) + Plaid Sandbox / Trial + Splitwise API + Railway free tier.
 
 ## Push notifications (iPhone)
 

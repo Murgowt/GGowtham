@@ -1,7 +1,7 @@
 {
   "name": "Brain",
   "short_name": "Brain",
-  "description": "Personal Robinhood portfolio reader",
+  "description": "Personal finance — invest and spend",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#07070c",

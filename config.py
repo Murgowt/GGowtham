@@ -27,6 +27,14 @@ class Settings(BaseSettings):
 
     cron_secret: str = ""
 
+    spending_cache_minutes: int = 15
+
+    plaid_client_id: str = ""
+    plaid_secret: str = ""
+    plaid_env: str = "sandbox"
+
+    splitwise_api_key: str = ""
+
     @model_validator(mode="after")
     def disable_mock_when_snaptrade_configured(self) -> "Settings":
         if (
