@@ -9,4 +9,5 @@ if [[ "${RAILWAY_SERVICE_NAME:-}" == *cron* ]]; then
 fi
 
 echo "Starting web server for service: ${RAILWAY_SERVICE_NAME:-web}"
+mkdir -p /data
 exec uvicorn main:app --host 0.0.0.0 --port "${PORT:-8000}"

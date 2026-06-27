@@ -57,12 +57,16 @@ Personal keys use signed API requests (not OAuth). Brain auto-discovers your Sna
 
 1. Push to GitHub
 2. [railway.app](https://railway.app) → New Project → Deploy from GitHub
-3. Set environment variables:
+3. **Add persistent storage** (required — without this, Plaid banks and push subscriptions reset on every deploy):
+   - **Option A — Volume (simplest):** Web service → Settings → Volumes → Add volume, mount path `/data`. Brain auto-uses `sqlite:////data/brain.db` on Railway.
+   - **Option B — PostgreSQL:** Add a PostgreSQL plugin to the project. Railway sets `DATABASE_URL` automatically; Brain supports it out of the box.
+4. Set environment variables on the **web** service:
    - `APP_PIN`, `SECRET_KEY`, `PRODUCTION=true`
    - `APP_BASE_URL=https://your-app.up.railway.app`
    - `SNAPTRADE_CLIENT_ID`, `SNAPTRADE_CONSUMER_KEY`
    - `MOCK_INTEGRATIONS=false`
-4. After deploy, connect Robinhood once from the live URL
+   - Do **not** set `DATABASE_URL=sqlite:///./brain.db` on Railway — that path is wiped each deploy. Omit it (auto `/data`) or use PostgreSQL.
+5. After deploy, connect Robinhood, Plaid, and notifications **once** — they persist across future deploys if step 3 is done.
 
 ## API
 
@@ -110,7 +114,7 @@ SPLITWISE_API_KEY=your-key
 
 - V1 shows all sources in one timeline; Splitwise entries may overlap with card charges (dedupe planned later)
 - Plaid Production Trial supports up to 10 linked accounts (enough for personal use)
-- Use the same Railway volume (`/data`) so Plaid tokens and Splitwise keys survive redeploys
+- Plaid tokens, Splitwise keys saved in Settings, and push subscriptions all live in the database — use a Railway volume (`/data`) or PostgreSQL so they survive redeploys (see **Deploy to Railway**)
 
 ## Cost
 
@@ -175,14 +179,18 @@ The repo uses `start.sh`: if the service name contains `cron`, it runs `python -
 
 If deploy logs show `Uvicorn running` on **brain-cron**, the service name must include `cron` (e.g. `brain-cron`).
 
-### 4. Persist data across redeploys (recommended)
+### 4. Persist data across redeploys
 
-Railway wipes SQLite on each deploy. Add a **Volume** to your **web** service:
+Railway containers have ephemeral filesystems — a default SQLite file is deleted on every deploy, which clears Plaid banks and push subscriptions.
 
-1. Mount path: `/data`
-2. Set `DATABASE_URL=sqlite:////data/brain.db`
+**Fix (pick one):**
 
-Then push subscriptions survive redeploys. Without a volume, tap **Enable notifications** again after each deploy.
+1. **Volume:** Web service → Volumes → mount `/data`. Brain auto-switches to `sqlite:////data/brain.db` on Railway.
+2. **PostgreSQL:** Add PostgreSQL to the project; Railway injects `DATABASE_URL`.
+
+After adding storage, reconnect Plaid and enable notifications **one last time**. Later deploys keep that data.
+
+Without persistent storage, tap **Enable notifications** again after each deploy.
 
 ```bash
 curl -X POST "https://your-app.up.railway.app/api/notifications/cron/daily" \

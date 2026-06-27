@@ -65,11 +65,13 @@ def _parse_expense_date(raw: str) -> datetime:
         return datetime.fromisoformat(f"{raw}T00:00:00+00:00")
 
 
-def _user_share(expense: dict, user_id: int) -> float | None:
+def _user_shares(expense: dict, user_id: int) -> dict[str, float] | None:
     for user in expense.get("users") or []:
         if user.get("user_id") == user_id:
-            owed = float(user.get("owed_share") or 0)
-            return owed
+            return {
+                "owed": float(user.get("owed_share") or 0),
+                "paid": float(user.get("paid_share") or 0),
+            }
     return None
 
 
@@ -124,10 +126,11 @@ def fetch_expenses(*, days: int = 30) -> list[dict]:
             if _is_deleted(expense):
                 continue
 
-            share = _user_share(expense, user_id)
-            if share is None or share == 0:
+            shares = _user_shares(expense, user_id)
+            if shares is None or shares["owed"] == 0:
                 continue
 
+            share = shares["owed"]
             expense_id = expense.get("id")
             description = (expense.get("description") or "Splitwise expense").strip()
             category = None
@@ -139,6 +142,7 @@ def fetch_expenses(*, days: int = 30) -> list[dict]:
             dt = _parse_expense_date(expense.get("date") or expense.get("created_at", ""))
             group_label = _group_label(expense)
             medium = resolve_medium(source="splitwise")
+            expense_cost = float(expense.get("cost") or 0)
 
             transactions.append(
                 {
@@ -150,6 +154,8 @@ def fetch_expenses(*, days: int = 30) -> list[dict]:
                     "description": description,
                     "account_name": group_label,
                     "category": category,
+                    "paid_share": round(shares["paid"], 2),
+                    "expense_cost": round(expense_cost, 2),
                     **medium,
                 }
             )

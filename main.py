@@ -33,13 +33,30 @@ class LoginRequest(BaseModel):
     pin: str
 
 
+def _database_kind(url: str) -> str:
+    if url.startswith("postgresql"):
+        return "postgresql"
+    if url.startswith("sqlite"):
+        return "sqlite"
+    return "other"
+
+
 @app.on_event("startup")
 def on_startup() -> None:
     init_db()
     logger = logging.getLogger("brain")
+    db_kind = _database_kind(settings.database_url)
+    if settings.production and db_kind == "sqlite" and "/data/" not in settings.database_url:
+        logger.warning(
+            "DATABASE_URL uses ephemeral SQLite (%s). "
+            "Add a Railway volume at /data or attach PostgreSQL so Plaid and "
+            "notification subscriptions survive redeploys.",
+            settings.database_url,
+        )
     logger.info(
-        "Brain started (production=%s, mock=%s, snaptrade=%s, plaid=%s)",
+        "Brain started (production=%s, db=%s, mock=%s, snaptrade=%s, plaid=%s)",
         settings.production,
+        db_kind,
         settings.mock_integrations,
         bool(settings.snaptrade_client_id and settings.snaptrade_consumer_key),
         bool(settings.plaid_client_id and settings.plaid_secret),

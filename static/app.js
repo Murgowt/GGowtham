@@ -350,9 +350,8 @@ function renderSpending(data) {
   spendCardEl.textContent = formatMoney(summary.by_source?.card || 0);
   spendSplitwiseEl.textContent = formatMoney(summary.by_source?.splitwise || 0);
 
-  const hasSplitwise = (data.transactions || []).some((t) => t.source === "splitwise");
-  const hasCard = (data.transactions || []).some((t) => t.source === "card");
-  hasSplitwise && hasCard ? show(spendOverlapHint) : hide(spendOverlapHint);
+  const hasOverlapResolved = (summary.overlaps_resolved || 0) > 0;
+  hasOverlapResolved ? show(spendOverlapHint) : hide(spendOverlapHint);
 
   const sourceLabels = {
     live: "Live",
