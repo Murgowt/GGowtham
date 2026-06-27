@@ -208,6 +208,14 @@ def _plaid_category(txn: dict) -> str | None:
     return None
 
 
+def _counterparty_names(txn: dict) -> list[str]:
+    names: list[str] = []
+    for party in txn.get("counterparties") or []:
+        if isinstance(party, dict) and party.get("name"):
+            names.append(str(party["name"]))
+    return names
+
+
 def _map_plaid_transaction(txn: dict, account_lookup: dict[str, dict]) -> dict | None:
     account_id = txn.get("account_id")
     account = account_lookup.get(account_id)
@@ -228,6 +236,9 @@ def _map_plaid_transaction(txn: dict, account_lookup: dict[str, dict]) -> dict |
     if not txn_id:
         return None
 
+    personal = txn.get("personal_finance_category") or {}
+    counterparties = _counterparty_names(txn)
+
     medium = resolve_medium(
         source=account["source"],
         institution_name=account.get("institution_name"),
@@ -246,6 +257,11 @@ def _map_plaid_transaction(txn: dict, account_lookup: dict[str, dict]) -> dict |
         "amount": amount,
         "currency": (txn.get("iso_currency_code") or "USD").upper(),
         "description": name,
+        "original_description": txn.get("name"),
+        "merchant_name": txn.get("merchant_name"),
+        "counterparties": counterparties,
+        "plaid_category_primary": personal.get("primary"),
+        "plaid_category_detailed": personal.get("detailed"),
         "account_name": account_label,
         "institution_name": account.get("institution_name"),
         "institution_id": account.get("institution_id"),

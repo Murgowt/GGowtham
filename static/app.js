@@ -47,6 +47,7 @@ const spendMonthLabelEl = document.getElementById("spend-month-label");
 const spendBankEl = document.getElementById("spend-bank");
 const spendCardEl = document.getElementById("spend-card");
 const spendSplitwiseEl = document.getElementById("spend-splitwise");
+const spendInvestmentsEl = document.getElementById("spend-investments");
 const spendStatusEl = document.getElementById("spend-status");
 const spendStatusTextEl = document.getElementById("spend-status-text");
 const spendUpdatedAtEl = document.getElementById("spend-updated-at");
@@ -101,15 +102,22 @@ function tickerBadge(ticker) {
   return ticker.length <= 4 ? ticker : ticker.slice(0, 3);
 }
 
-function sourceLabel(source) {
+function sourceLabel(source, txnType) {
+  if (txnType === "settlement") return "Settlement";
+  if (txnType === "transfer") return "Transfer";
   return { bank: "Bank", card: "Card", splitwise: "Splitwise" }[source] || source;
 }
 
-function sourceBadgeClass(source) {
+function sourceBadgeClass(source, txnType) {
+  if (txnType === "settlement") return "source-badge source-settlement";
+  if (txnType === "transfer") return "source-badge source-transfer";
   return `source-badge source-${source}`;
 }
 
 function mediumForTransaction(t) {
+  if (t.txn_type === "investment") {
+    return { key: "robinhood", short: "RH", label: "Robinhood" };
+  }
   if (t.medium_key && t.medium_short) {
     return {
       key: t.medium_key,
@@ -144,6 +152,7 @@ const STATIC_LOGO_PATHS = {
   discover: "/static/logos/discover.svg",
   amex: "/static/logos/amex.png",
   splitwise: "/static/logos/splitwise.png",
+  robinhood: "/static/logos/robinhood.svg",
   capital_one: "/static/logos/capitalone.svg",
   citi: "/static/logos/citi.svg",
   wells_fargo: "/static/logos/wellsfargo.svg",
@@ -174,12 +183,18 @@ function logoSrcForTransaction(t, logos = {}) {
 
 function mediumIconHtml(t, logos = {}) {
   const medium = mediumForTransaction(t);
-  const kind = t.source === "splitwise" ? "splitwise" : (t.source === "card" ? "card" : "bank");
+  const kind = t.txn_type === "investment" ? "investment"
+    : t.source === "splitwise" ? "splitwise"
+    : (t.source === "card" ? "card" : "bank");
   const src = logoSrcForTransaction(t, logos);
-  const pngBrand = ["chase_card", "amex", "splitwise"].includes(medium.key) ? " brand-png" : "";
+  const pngBrand = ["chase_card", "amex", "splitwise", "robinhood"].includes(medium.key) ? " brand-png" : "";
   return `<div class="medium-icon has-logo${pngBrand} medium-${medium.key}" data-kind="${kind}" title="${medium.label}">
     <img src="${src}" alt="" class="medium-logo">
   </div>`;
+}
+
+function sortTransactionsForDisplay(transactions) {
+  return [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date));
 }
 
 function isStandalone() {
@@ -349,9 +364,9 @@ function renderSpending(data) {
   spendBankEl.textContent = formatMoney(summary.by_source?.bank || 0);
   spendCardEl.textContent = formatMoney(summary.by_source?.card || 0);
   spendSplitwiseEl.textContent = formatMoney(summary.by_source?.splitwise || 0);
+  spendInvestmentsEl.textContent = formatMoney(summary.investments_net ?? summary.investments_outflow ?? 0);
 
-  const hasOverlapResolved = (summary.overlaps_resolved || 0) > 0;
-  hasOverlapResolved ? show(spendOverlapHint) : hide(spendOverlapHint);
+  hide(spendOverlapHint);
 
   const sourceLabels = {
     live: "Live",
@@ -367,7 +382,8 @@ function renderSpending(data) {
   if (!data.transactions?.length) {
     transactionsList.innerHTML = "";
   } else {
-    transactionsList.innerHTML = data.transactions.map((t) => {
+    const sorted = sortTransactionsForDisplay(data.transactions);
+    transactionsList.innerHTML = sorted.map((t) => {
       const medium = mediumForTransaction(t);
       return `
       <li class="holding transaction-row">
@@ -376,7 +392,7 @@ function renderSpending(data) {
           <div class="ticker">${t.description}</div>
           <div class="holding-meta">
             <span class="shares">${medium.label}</span>
-            <span class="${sourceBadgeClass(t.source)}">${sourceLabel(t.source)} · ${formatShortDate(t.date)}</span>
+            <span class="${sourceBadgeClass(t.source, t.txn_type)}">${sourceLabel(t.source, t.txn_type)} · ${formatShortDate(t.date)}</span>
           </div>
         </div>
         <div class="holding-right">
@@ -578,6 +594,7 @@ async function loadSpending(refresh = false, { silent = false } = {}) {
       spendBankEl.textContent = "—";
       spendCardEl.textContent = "—";
       spendSplitwiseEl.textContent = "—";
+      spendInvestmentsEl.textContent = "—";
       spendStatusEl.classList.add("offline");
       spendStatusTextEl.textContent = "Not connected";
       spendUpdatedAtEl.textContent = "";

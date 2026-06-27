@@ -671,8 +671,26 @@ body {
 .source-badge.source-bank { color: #7eb8ff; }
 .source-badge.source-card { color: #c4a0ff; }
 .source-badge.source-splitwise { color: #ffb86b; }
+.source-badge.source-transfer { color: #8be9fd; }
+.source-badge.source-settlement { color: #ffb86b; }
+
+.metrics-row-4 .metric {
+  padding: 0.875rem 0.25rem;
+}
+
+.metrics-row-4 .metric-label {
+  font-size: 0.625rem;
+}
+
+.metrics-row-4 .metric-value {
+  font-size: 0.8125rem;
+}
 
 .transaction-row .txn-icon {
+  background: var(--surface-raised);
+  color: var(--muted);
+  font-size: 0.75rem;
+}
   background: var(--surface-raised);
   color: var(--muted);
   font-size: 0.75rem;
