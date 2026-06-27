@@ -80,6 +80,10 @@ def _group_label(expense: dict) -> str:
     return "Splitwise"
 
 
+def _is_deleted(expense: dict) -> bool:
+    return bool(expense.get("deleted_at"))
+
+
 def fetch_expenses(*, days: int = 30) -> list[dict]:
     if settings.mock_integrations:
         return []
@@ -101,7 +105,12 @@ def fetch_expenses(*, days: int = 30) -> list[dict]:
         try:
             data = _get(
                 "/get_expenses",
-                params={"limit": limit, "offset": offset, "dated_after": dated_after},
+                params={
+                    "limit": limit,
+                    "offset": offset,
+                    "dated_after": dated_after,
+                    "visible": True,
+                },
             )
         except httpx.HTTPError:
             logger.exception("Splitwise API request failed")
@@ -112,6 +121,9 @@ def fetch_expenses(*, days: int = 30) -> list[dict]:
             break
 
         for expense in expenses:
+            if _is_deleted(expense):
+                continue
+
             share = _user_share(expense, user_id)
             if share is None or share == 0:
                 continue

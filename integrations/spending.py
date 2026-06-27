@@ -116,6 +116,55 @@ _cache: SpendingData | None = None
 _cache_at: datetime | None = None
 
 
+def invalidate_spending_cache() -> None:
+    global _cache, _cache_at
+    _cache = None
+    _cache_at = None
+
+
+def _dedupe_and_sort(transactions: list[dict]) -> list[dict]:
+    seen: set[str] = set()
+    unique: list[dict] = []
+    for txn in transactions:
+        if txn["id"] in seen:
+            continue
+        seen.add(txn["id"])
+        unique.append(txn)
+    unique.sort(key=lambda t: t["date"], reverse=True)
+    return unique
+
+
+def _fetch_splitwise(*, days: int) -> list[dict]:
+    if not splitwise_client.is_configured():
+        return []
+    try:
+        return splitwise_client.fetch_expenses(days=days)
+    except Exception:
+        logger.exception("Splitwise fetch failed")
+        return []
+
+
+def _build_spending(
+    plaid_txns: list[dict],
+    splitwise_txns: list[dict],
+    *,
+    now: datetime,
+    source: str,
+    cached: bool = False,
+) -> SpendingData:
+    unique = _dedupe_and_sort(plaid_txns + splitwise_txns)
+    summary = compute_summary(unique, now=now)
+    if not unique and source == "live":
+        source = "empty"
+    return SpendingData(
+        transactions=unique,
+        summary=summary,
+        cached=cached,
+        updated_at=now,
+        source=source,
+    )
+
+
 def _mock_spending(*, days: int) -> SpendingData:
     now = datetime.now(timezone.utc)
     cutoff = now - timedelta(days=days)
@@ -142,43 +191,20 @@ def _mock_spending(*, days: int) -> SpendingData:
     )
 
 
-def _fetch_live(*, days: int) -> SpendingData:
+def _fetch_live(*, days: int, splitwise_txns: list[dict] | None = None) -> SpendingData:
     now = datetime.now(timezone.utc)
-    transactions: list[dict] = []
+    plaid_txns: list[dict] = []
 
     try:
-        transactions.extend(plaid_client.fetch_plaid_transactions(days=days, force_refresh=True))
+        plaid_txns = plaid_client.fetch_plaid_transactions(days=days, force_refresh=True)
     except Exception:
         logger.exception("Plaid fetch failed")
 
-    try:
-        transactions.extend(splitwise_client.fetch_expenses(days=days))
-    except Exception:
-        logger.exception("Splitwise fetch failed")
-
-    seen: set[str] = set()
-    unique: list[dict] = []
-    for txn in transactions:
-        if txn["id"] in seen:
-            continue
-        seen.add(txn["id"])
-        unique.append(txn)
-
-    unique.sort(key=lambda t: t["date"], reverse=True)
-    summary = compute_summary(unique, now=now)
-    save_spending_snapshot(unique, summary)
-
-    source = "live"
-    if not unique:
-        source = "empty"
-
-    return SpendingData(
-        transactions=unique,
-        summary=summary,
-        cached=False,
-        updated_at=now,
-        source=source,
-    )
+    if splitwise_txns is None:
+        splitwise_txns = _fetch_splitwise(days=days)
+    result = _build_spending(plaid_txns, splitwise_txns, now=now, source="live")
+    save_spending_snapshot(result.transactions, result.summary)
+    return result
 
 
 def get_spending_logos() -> dict[str, str]:
@@ -204,14 +230,17 @@ def get_spending(*, force_refresh: bool = False, days: int = 30) -> SpendingData
     now = datetime.now(timezone.utc)
     cache_ttl = timedelta(minutes=settings.spending_cache_minutes)
 
+    if force_refresh:
+        invalidate_spending_cache()
+
+    splitwise_txns = _fetch_splitwise(days=days)
+
     if not force_refresh and _cache and _cache_at and (now - _cache_at) < cache_ttl:
-        return SpendingData(
-            transactions=_cache.transactions,
-            summary=_cache.summary,
-            cached=True,
-            updated_at=_cache.updated_at,
-            source="cache",
-        )
+        plaid_txns = [t for t in _cache.transactions if t.get("source") != "splitwise"]
+        result = _build_spending(plaid_txns, splitwise_txns, now=now, source="live", cached=True)
+        _cache = result
+        _cache_at = now
+        return result
 
     has_any_source = plaid_client.has_connection() or splitwise_client.is_configured()
     if not has_any_source:
@@ -226,7 +255,7 @@ def get_spending(*, force_refresh: bool = False, days: int = 30) -> SpendingData
             source="empty",
         )
 
-    live = _fetch_live(days=days)
+    live = _fetch_live(days=days, splitwise_txns=splitwise_txns)
     _cache = live
     _cache_at = now
     return live

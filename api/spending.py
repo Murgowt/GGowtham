@@ -1,9 +1,14 @@
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from api.auth import require_auth
 from integrations import plaid_client, splitwise_client
-from integrations.spending import get_spending, get_spending_logos, get_spending_status
+from integrations.spending import (
+    get_spending,
+    get_spending_logos,
+    get_spending_status,
+    invalidate_spending_cache,
+)
 from db.database import set_splitwise_api_key
 
 router = APIRouter(prefix="/api", tags=["spending"])
@@ -28,8 +33,9 @@ def spending_status(request: Request):
 
 
 @router.get("/spending/transactions")
-def spending_transactions(request: Request, refresh: bool = False, days: int = 30):
+def spending_transactions(request: Request, response: Response, refresh: bool = False, days: int = 30):
     require_auth(request)
+    response.headers["Cache-Control"] = "no-store"
     days = max(1, min(days, 90))
     try:
         data = get_spending(force_refresh=refresh, days=days)
@@ -63,6 +69,7 @@ def spending_summary(request: Request, refresh: bool = False, days: int = 30):
 def splitwise_configure(request: Request, body: SplitwiseConfigureRequest):
     require_auth(request)
     set_splitwise_api_key(body.api_key.strip())
+    invalidate_spending_cache()
     if not splitwise_client.is_configured():
         raise HTTPException(status_code=400, detail="Invalid Splitwise API key")
     try:

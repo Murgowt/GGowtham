@@ -54,6 +54,8 @@ const spendUpdatedAtEl = document.getElementById("spend-updated-at");
 let activeTab = "invest";
 let settingsReturnTab = "invest";
 let plaidScriptPromise = null;
+let spendPollTimer = null;
+const SPEND_POLL_MS = 30_000;
 
 function show(el) { el.classList.remove("hidden"); }
 function hide(el) { el.classList.add("hidden"); }
@@ -222,7 +224,22 @@ function setActiveTab(tab) {
   });
 }
 
+function startSpendPolling() {
+  stopSpendPolling();
+  spendPollTimer = setInterval(() => {
+    if (activeTab === "spend") loadSpending(true, { silent: true });
+  }, SPEND_POLL_MS);
+}
+
+function stopSpendPolling() {
+  if (spendPollTimer) {
+    clearInterval(spendPollTimer);
+    spendPollTimer = null;
+  }
+}
+
 function showInvest() {
+  stopSpendPolling();
   hide(settingsScreen);
   hide(spendingScreen);
   show(portfolioScreen);
@@ -234,9 +251,11 @@ function showSpend() {
   hide(portfolioScreen);
   show(spendingScreen);
   setActiveTab("spend");
+  startSpendPolling();
 }
 
 function showSettings(fromTab = activeTab) {
+  stopSpendPolling();
   settingsReturnTab = fromTab;
   hide(portfolioScreen);
   hide(spendingScreen);
@@ -248,7 +267,7 @@ function showSettings(fromTab = activeTab) {
 function showMainFromSettings() {
   if (settingsReturnTab === "spend") {
     showSpend();
-    loadSpending();
+    loadSpending(true);
   } else {
     showInvest();
   }
@@ -548,8 +567,8 @@ async function loadPortfolio(refresh = false) {
   }
 }
 
-async function loadSpending(refresh = false) {
-  setLoading(true);
+async function loadSpending(refresh = false, { silent = false } = {}) {
+  if (!silent) setLoading(true);
   try {
     const status = await api("/api/spending/status");
     const hasSource = status.plaid_connected || status.splitwise_configured || status.mock;
@@ -568,13 +587,16 @@ async function loadSpending(refresh = false) {
     }
 
     hide(spendConnectBanner);
-    const data = await api(`/api/spending/transactions${refresh ? "?refresh=true" : ""}`);
+    const params = new URLSearchParams();
+    if (refresh) params.set("refresh", "true");
+    params.set("_", String(Date.now()));
+    const data = await api(`/api/spending/transactions?${params}`);
     renderSpending(data);
   } catch (err) {
     spendStatusEl.classList.add("offline");
     spendStatusTextEl.textContent = err.message;
   } finally {
-    setLoading(false);
+    if (!silent) setLoading(false);
   }
 }
 
@@ -709,7 +731,7 @@ document.querySelectorAll(".tab-nav .tab:not(.disabled)").forEach((btn) => {
       await loadPortfolio();
     } else if (tab === "spend") {
       showSpend();
-      await loadSpending();
+      await loadSpending(true);
     }
   });
 });
@@ -744,5 +766,11 @@ connectPlaidBtn.addEventListener("click", connectPlaid);
 saveSplitwiseBtn.addEventListener("click", saveSplitwiseKey);
 enableNotificationsBtn.addEventListener("click", enableNotifications);
 testNotificationBtn.addEventListener("click", sendTestNotification);
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && activeTab === "spend") {
+    loadSpending(true, { silent: true });
+  }
+});
 
 checkAuth();
