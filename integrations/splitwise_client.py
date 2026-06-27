@@ -200,14 +200,16 @@ def fetch_expenses(*, days: int = 30) -> list[dict]:
                 continue
 
             shares = _user_shares(expense, user_id)
-            if shares is None or shares["owed"] == 0:
+            if shares is None:
+                continue
+            if shares["owed"] == 0 and shares["paid"] == 0:
                 continue
 
             transactions.append(
                 _base_txn(
                     expense,
                     expense_id=expense_id,
-                    amount=-shares["owed"],
+                    amount=round(-shares["owed"], 2),
                     dt=dt,
                     description=description,
                     txn_type="share",

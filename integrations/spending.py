@@ -251,16 +251,22 @@ def _find_single_charge_match(
     days: int,
     matched: set[str],
 ) -> dict | None:
+    best: dict | None = None
+    best_day_delta: int | None = None
     for charge in charges:
         if charge["id"] in matched:
             continue
         charge_amt = abs(charge["amount"])
         charge_dt = _parse_date(charge["date"])
-        if not _within_days(charge_dt, anchor, days):
+        day_delta = abs((charge_dt - anchor).days)
+        if day_delta > days:
             continue
-        if _amounts_match(charge_amt, target):
-            return charge
-    return None
+        if not _amounts_match(charge_amt, target):
+            continue
+        if best is None or day_delta < best_day_delta:
+            best = charge
+            best_day_delta = day_delta
+    return best
 
 
 def _find_bundle_charge_match(
@@ -414,6 +420,9 @@ def _public_transactions(transactions: list[dict]) -> list[dict]:
         if txn.get("hidden"):
             continue
         row = {k: v for k, v in txn.items() if k not in skip_keys}
+        if txn.get("txn_type") == "share" and txn.get("source") == "splitwise":
+            row["paid_share"] = txn.get("paid_share")
+            row["owed_share"] = txn.get("owed_share")
         effective = txn.get("effective_amount", txn["amount"])
         if effective != txn.get("amount"):
             row["amount"] = effective

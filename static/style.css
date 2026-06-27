@@ -691,12 +691,9 @@ body {
   color: var(--muted);
   font-size: 0.75rem;
 }
-  background: var(--surface-raised);
-  color: var(--muted);
-  font-size: 0.75rem;
-}
 
 .medium-icon {
+  position: relative;
   width: 44px;
   height: 44px;
   border-radius: 12px;
@@ -747,15 +744,10 @@ body {
 .medium-icon[data-kind="card"]::after {
   content: "";
   position: absolute;
-  width: 44px;
-  height: 44px;
+  inset: 0;
   border-radius: 12px;
   border: 2px solid rgba(255, 255, 255, 0.22);
   pointer-events: none;
-}
-
-.medium-icon {
-  position: relative;
 }
 
 .medium-chase_bank,

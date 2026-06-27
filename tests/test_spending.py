@@ -116,6 +116,31 @@ def test_personal_card_without_splitwise_unchanged():
     assert compute_summary(resolved)["month_outflow"] == 42.0
 
 
+def test_user_paid_split_visible_when_owed_zero():
+    """When you paid on your card and owe $0, the split still appears and hides the card charge."""
+    resolved = apply_spending_rules([
+        {
+            "id": "splitwise:share:metra",
+            "source": "splitwise",
+            "txn_type": "share",
+            "date": _dt(0),
+            "amount": 0.0,
+            "owed_share": 0.0,
+            "paid_share": 6.75,
+            "expense_cost": 6.75,
+            "description": "Metra",
+        },
+        _card(amount=-6.75, description="Metra"),
+    ])
+    sw = next(t for t in resolved if t["source"] == "splitwise")
+    card = next(t for t in resolved if t["source"] == "card")
+    assert sw.get("hidden") is not True
+    assert sw["effective_amount"] == 0.0
+    assert card.get("hidden") is True
+    summary = compute_summary(resolved)
+    assert summary["month_outflow"] == 0.0
+
+
 def test_robinhood_deposit_and_withdrawal_net_to_zero():
     resolved = apply_spending_rules([
         {
