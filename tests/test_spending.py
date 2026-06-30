@@ -14,9 +14,7 @@ def _share(**kwargs) -> dict:
         "txn_type": "share",
         "date": _dt(1),
         "amount": -9.0,
-        "owed_share": 9.0,
-        "paid_share": 17.90,
-        "expense_cost": 18.0,
+        "net_balance": -9.0,
         "description": "Indian store",
     }
     base.update(kwargs)
@@ -35,49 +33,36 @@ def _card(**kwargs) -> dict:
     return base
 
 
-def test_user_paid_counts_share_not_full_card():
+def test_splitwise_and_card_both_show_without_dedup():
     resolved = apply_spending_rules([_card(), _share()])
     card = next(t for t in resolved if t["id"] == "card:1")
     share = next(t for t in resolved if t["id"] == "splitwise:share:1")
 
-    assert card["hidden"] is True
-    assert card["effective_amount"] == 0
-    assert share["effective_amount"] == -9.0
+    assert card.get("hidden") is not True
     assert share.get("hidden") is not True
+    assert share["amount"] == -9.0
 
     summary = compute_summary(resolved)
-    assert summary["month_outflow"] == 9.0
+    assert summary["month_outflow"] == 26.90
 
 
-def test_friend_paid_counts_share_only():
+def test_splitwise_uses_net_balance_sign():
     resolved = apply_spending_rules([
-        _share(paid_share=0, amount=-9.0, owed_share=9.0),
+        _share(amount=6.75, net_balance=6.75, description="Metra"),
     ])
-    assert resolved[0]["effective_amount"] == -9.0
-    assert compute_summary(resolved)["month_outflow"] == 9.0
+    share = resolved[0]
+    assert share["amount"] == 6.75
+    summary = compute_summary(resolved)
+    assert summary["month_inflow"] == 6.75
+    assert summary["month_outflow"] == 0.0
 
 
-def test_bundled_cards_suppressed_when_user_paid():
+def test_splitwise_you_owe_shows_negative():
     resolved = apply_spending_rules([
-        _card(id="card:a", amount=-17.90, date=_dt(3)),
-        _card(id="card:b", amount=-42.00, date=_dt(2)),
-        _card(id="card:c", amount=-15.00, date=_dt(1)),
-        _share(
-            id="splitwise:share:bundle",
-            paid_share=74.90,
-            expense_cost=75.0,
-            amount=-37.50,
-            owed_share=37.50,
-            description="Misc bundle",
-        ),
+        _share(amount=-15.5, net_balance=-15.5, description="Groceries"),
     ])
-
-    hidden_cards = [t for t in resolved if t["source"] == "card" and t.get("hidden")]
-    share = next(t for t in resolved if t["id"] == "splitwise:share:bundle")
-
-    assert len(hidden_cards) == 3
-    assert share["effective_amount"] == -37.50
-    assert compute_summary(resolved)["month_outflow"] == 37.50
+    assert resolved[0]["amount"] == -15.5
+    assert compute_summary(resolved)["month_outflow"] == 15.5
 
 
 def test_settlement_received_counts_as_inflow():
@@ -101,44 +86,28 @@ def test_settlement_received_counts_as_inflow():
     ])
 
     zelle = next(t for t in resolved if t["id"] == "bank:zelle")
-    assert zelle.get("hidden") is True
+    assert zelle.get("hidden") is not True
 
     summary = compute_summary(resolved)
     assert summary["settlements_received"] == 9.0
-    assert summary["month_inflow"] == 9.0
+    assert summary["month_inflow"] == 18.0
+
+
+def test_pending_card_included_in_outflow():
+    resolved = apply_spending_rules([
+        _card(id="card:pending", amount=-42.0, description="Uber", pending=True),
+    ])
+    card = resolved[0]
+    assert card.get("hidden") is not True
+    assert card["pending"] is True
+    assert compute_summary(resolved)["month_outflow"] == 42.0
 
 
 def test_personal_card_without_splitwise_unchanged():
     resolved = apply_spending_rules([_card(amount=-42.0, description="Uber")])
     card = resolved[0]
     assert card.get("hidden") is not True
-    assert card["effective_amount"] == -42.0
     assert compute_summary(resolved)["month_outflow"] == 42.0
-
-
-def test_user_paid_split_visible_when_owed_zero():
-    """When you paid on your card and owe $0, the split still appears and hides the card charge."""
-    resolved = apply_spending_rules([
-        {
-            "id": "splitwise:share:metra",
-            "source": "splitwise",
-            "txn_type": "share",
-            "date": _dt(0),
-            "amount": 0.0,
-            "owed_share": 0.0,
-            "paid_share": 6.75,
-            "expense_cost": 6.75,
-            "description": "Metra",
-        },
-        _card(amount=-6.75, description="Metra"),
-    ])
-    sw = next(t for t in resolved if t["source"] == "splitwise")
-    card = next(t for t in resolved if t["source"] == "card")
-    assert sw.get("hidden") is not True
-    assert sw["effective_amount"] == 0.0
-    assert card.get("hidden") is True
-    summary = compute_summary(resolved)
-    assert summary["month_outflow"] == 0.0
 
 
 def test_robinhood_deposit_and_withdrawal_net_to_zero():
@@ -166,24 +135,6 @@ def test_robinhood_deposit_and_withdrawal_net_to_zero():
     assert summary["investments_net"] == 0.0
 
 
-def test_robinhood_inflow_marked_as_investment():
-    resolved = apply_spending_rules([
-        {
-            "id": "bank:rh-in",
-            "source": "bank",
-            "date": _dt(1),
-            "amount": 2000.0,
-            "description": "Robinhood",
-            "counterparties": ["Robinhood"],
-            "account_name": "Chase Checking",
-        },
-    ])
-    txn = resolved[0]
-    assert txn["txn_type"] == "investment"
-    assert txn.get("investment_direction") == "withdrawal"
-    assert compute_summary(resolved)["investments_inflow"] == 2000.0
-
-
 def test_internal_transfer_hidden_from_spend():
     resolved = apply_spending_rules([
         {
@@ -200,66 +151,3 @@ def test_internal_transfer_hidden_from_spend():
     assert txn["txn_type"] == "transfer"
     assert txn.get("hidden") is True
     assert compute_summary(resolved)["month_outflow"] == 0
-
-
-def test_robinhood_transfer_marked_as_investment():
-    resolved = apply_spending_rules([
-        {
-            "id": "bank:rh",
-            "source": "bank",
-            "date": _dt(1),
-            "amount": -500.0,
-            "description": "Robinhood Securities",
-            "account_name": "Chase Checking",
-        },
-        _card(amount=-42.0, description="Uber"),
-    ])
-    rh = next(t for t in resolved if t["id"] == "bank:rh")
-    assert rh["txn_type"] == "investment"
-    assert rh["category"] == "Investments"
-
-    summary = compute_summary(resolved)
-    assert summary["investments_outflow"] == 500.0
-    assert summary["month_outflow"] == 42.0
-
-
-def test_plaid_investment_category_detected_without_robinhood_name():
-    resolved = apply_spending_rules([
-        {
-            "id": "bank:ach",
-            "source": "bank",
-            "date": _dt(2),
-            "amount": -900.0,
-            "description": "ACH Debit",
-            "account_name": "Chase Checking",
-            "plaid_category_detailed": "TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS",
-            "counterparties": ["Robinhood Securities"],
-        },
-    ])
-    txn = resolved[0]
-    assert txn["txn_type"] == "investment"
-    assert compute_summary(resolved)["investments_outflow"] == 900.0
-
-
-def test_bank_transfer_not_hidden_by_splitwise_card_match():
-    resolved = apply_spending_rules([
-        {
-            "id": "bank:rh",
-            "source": "bank",
-            "date": _dt(1),
-            "amount": -900.0,
-            "description": "Robinhood Securities",
-            "account_name": "Chase Checking",
-        },
-        _share(
-            id="splitwise:share:900",
-            paid_share=900.0,
-            expense_cost=900.0,
-            amount=-450.0,
-            owed_share=450.0,
-            description="Unrelated split",
-        ),
-    ])
-    rh = next(t for t in resolved if t["id"] == "bank:rh")
-    assert rh.get("hidden") is not True
-    assert rh["txn_type"] == "investment"

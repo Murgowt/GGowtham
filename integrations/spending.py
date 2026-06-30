@@ -10,9 +10,7 @@ from integrations.medium import resolve_medium
 logger = logging.getLogger(__name__)
 
 CARD_MATCH_DAYS = 21
-SETTLEMENT_MATCH_DAYS = 7
 AMOUNT_TOLERANCE = 1.0
-BUNDLE_TOLERANCE = 2.0
 
 ROBINHOOD_MARKERS = (
     "robinhood",
@@ -70,9 +68,7 @@ MOCK_TRANSACTIONS = [
         "description": "June rent split",
         "account_name": "Splitwise · Roommates",
         "category": "Rent",
-        "paid_share": 800.00,
-        "owed_share": 400.00,
-        "expense_cost": 800.00,
+        "net_balance": -400.00,
     },
     {
         "id": "mock:4",
@@ -136,14 +132,6 @@ def _within_days(a: datetime, b: datetime, days: int) -> bool:
 
 def _parse_date(raw: str) -> datetime:
     return datetime.fromisoformat(raw)
-
-
-def _is_plaid_charge(txn: dict) -> bool:
-    return (
-        txn.get("source") in ("card", "bank")
-        and txn.get("amount", 0) != 0
-        and txn.get("txn_type") not in ("investment", "transfer")
-    )
 
 
 def _robinhood_haystack(txn: dict) -> str:
@@ -243,162 +231,15 @@ def _link_investment_hops(txns: list[dict]) -> None:
             txn["hidden"] = True
 
 
-def _find_single_charge_match(
-    charges: list[dict],
-    *,
-    target: float,
-    anchor: datetime,
-    days: int,
-    matched: set[str],
-) -> dict | None:
-    best: dict | None = None
-    best_day_delta: int | None = None
-    for charge in charges:
-        if charge["id"] in matched:
-            continue
-        charge_amt = abs(charge["amount"])
-        charge_dt = _parse_date(charge["date"])
-        day_delta = abs((charge_dt - anchor).days)
-        if day_delta > days:
-            continue
-        if not _amounts_match(charge_amt, target):
-            continue
-        if best is None or day_delta < best_day_delta:
-            best = charge
-            best_day_delta = day_delta
-    return best
-
-
-def _find_bundle_charge_match(
-    charges: list[dict],
-    *,
-    target: float,
-    anchor: datetime,
-    days: int,
-    matched: set[str],
-) -> list[dict] | None:
-    candidates = [
-        c for c in charges
-        if c["id"] not in matched and _within_days(_parse_date(c["date"]), anchor, days)
-    ]
-    if not candidates:
-        return None
-
-    total = sum(abs(c["amount"]) for c in candidates)
-    if _amounts_match(total, target, tolerance=BUNDLE_TOLERANCE):
-        return candidates
-
-    picked: list[dict] = []
-    running = 0.0
-    for charge in sorted(candidates, key=lambda c: abs(c["amount"]), reverse=True):
-        next_total = running + abs(charge["amount"])
-        if next_total <= target + BUNDLE_TOLERANCE:
-            picked.append(charge)
-            running = next_total
-            if _amounts_match(running, target, tolerance=BUNDLE_TOLERANCE):
-                return picked
-    return None
-
-
-def _suppress_charges(charges: list[dict]) -> None:
-    for charge in charges:
-        charge["effective_amount"] = 0
-        charge["hidden"] = True
-
-
 def apply_spending_rules(transactions: list[dict]) -> list[dict]:
-    """Compute true personal spend: shares, card dedup, settlements."""
+    """Tag investments and internal transfers. Splitwise amounts are used as-is."""
     txns = [dict(t) for t in transactions]
     _mark_investment_transfers(txns)
     _mark_internal_transfers(txns)
     _link_investment_hops(txns)
-    matched_plaid: set[str] = set()
-
-    splitwise_shares = [
-        t for t in txns
-        if t.get("source") == "splitwise" and t.get("txn_type") == "share"
-    ]
-    splitwise_settlements = [
-        t for t in txns
-        if t.get("source") == "splitwise" and t.get("txn_type") == "settlement"
-    ]
-    plaid = [t for t in txns if _is_plaid_charge(t)]
-
-    for sw in splitwise_shares:
-        owed = abs(sw.get("amount", 0))
-        paid = sw.get("paid_share", 0)
-        cost = sw.get("expense_cost", 0)
-        sw_dt = _parse_date(sw["date"])
-        sw["effective_amount"] = round(-owed, 2)
-
-        if paid <= 0:
-            continue
-
-        match_targets = [paid]
-        if cost > 0 and not _amounts_match(cost, paid):
-            match_targets.append(cost)
-
-        matched_charges: list[dict] = []
-        for target in match_targets:
-            single = _find_single_charge_match(
-                plaid,
-                target=target,
-                anchor=sw_dt,
-                days=CARD_MATCH_DAYS,
-                matched=matched_plaid,
-            )
-            if single:
-                matched_charges = [single]
-                break
-
-            bundle = _find_bundle_charge_match(
-                plaid,
-                target=target,
-                anchor=sw_dt,
-                days=CARD_MATCH_DAYS,
-                matched=matched_plaid,
-            )
-            if bundle:
-                matched_charges = bundle
-                break
-
-        if matched_charges:
-            for charge in matched_charges:
-                matched_plaid.add(charge["id"])
-            _suppress_charges(matched_charges)
-
-    for settlement in splitwise_settlements:
-        settlement["effective_amount"] = settlement["amount"]
-        amt = abs(settlement["amount"])
-        anchor = _parse_date(settlement["date"])
-        direction = settlement.get("settlement_direction")
-
-        if direction == "received":
-            bank_match = _find_single_charge_match(
-                [t for t in plaid if t.get("amount", 0) > 0],
-                target=amt,
-                anchor=anchor,
-                days=SETTLEMENT_MATCH_DAYS,
-                matched=matched_plaid,
-            )
-            if bank_match:
-                matched_plaid.add(bank_match["id"])
-                _suppress_charges([bank_match])
-        elif direction == "sent":
-            bank_match = _find_single_charge_match(
-                [t for t in plaid if t.get("amount", 0) < 0],
-                target=amt,
-                anchor=anchor,
-                days=SETTLEMENT_MATCH_DAYS,
-                matched=matched_plaid,
-            )
-            if bank_match:
-                matched_plaid.add(bank_match["id"])
-                _suppress_charges([bank_match])
 
     for txn in txns:
-        if "effective_amount" not in txn:
-            txn["effective_amount"] = txn.get("amount", 0)
+        txn.setdefault("effective_amount", txn.get("amount", 0))
 
     return txns
 
@@ -411,8 +252,8 @@ def _public_transactions(transactions: list[dict]) -> list[dict]:
     public: list[dict] = []
     skip_keys = {
         "paid_share", "owed_share", "expense_cost", "hidden", "effective_amount",
-        "settlement_direction",
-        "original_description", "merchant_name",
+        "settlement_direction", "net_balance",
+        "original_description", "merchant_name", "pending_transaction_id",
         "counterparties", "plaid_category_primary", "plaid_category_detailed",
     }
 
@@ -420,9 +261,6 @@ def _public_transactions(transactions: list[dict]) -> list[dict]:
         if txn.get("hidden"):
             continue
         row = {k: v for k, v in txn.items() if k not in skip_keys}
-        if txn.get("txn_type") == "share" and txn.get("source") == "splitwise":
-            row["paid_share"] = txn.get("paid_share")
-            row["owed_share"] = txn.get("owed_share")
         effective = txn.get("effective_amount", txn["amount"])
         if effective != txn.get("amount"):
             row["amount"] = effective

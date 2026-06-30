@@ -65,10 +65,11 @@ def _parse_expense_date(raw: str) -> datetime:
         return datetime.fromisoformat(f"{raw}T00:00:00+00:00")
 
 
-def _user_shares(expense: dict, user_id: int) -> dict[str, float] | None:
+def _user_balance(expense: dict, user_id: int) -> dict[str, float] | None:
     for user in expense.get("users") or []:
         if user.get("user_id") == user_id:
             return {
+                "net": float(user.get("net_balance") or 0),
                 "owed": float(user.get("owed_share") or 0),
                 "paid": float(user.get("paid_share") or 0),
             }
@@ -161,7 +162,6 @@ def fetch_expenses(*, days: int = 30) -> list[dict]:
             expense_id = expense.get("id")
             description = (expense.get("description") or "Splitwise expense").strip()
             dt = _parse_expense_date(expense.get("date") or expense.get("created_at", ""))
-            expense_cost = float(expense.get("cost") or 0)
 
             if expense.get("payment"):
                 for rep in expense.get("repayments") or []:
@@ -199,24 +199,20 @@ def fetch_expenses(*, days: int = 30) -> list[dict]:
                         )
                 continue
 
-            shares = _user_shares(expense, user_id)
-            if shares is None:
-                continue
-            if shares["owed"] == 0 and shares["paid"] == 0:
+            balance = _user_balance(expense, user_id)
+            if balance is None or balance["net"] == 0:
                 continue
 
             transactions.append(
                 _base_txn(
                     expense,
                     expense_id=expense_id,
-                    amount=round(-shares["owed"], 2),
+                    amount=round(balance["net"], 2),
                     dt=dt,
                     description=description,
                     txn_type="share",
                     medium=medium,
-                    owed_share=round(shares["owed"], 2),
-                    paid_share=round(shares["paid"], 2),
-                    expense_cost=round(expense_cost, 2),
+                    net_balance=round(balance["net"], 2),
                 )
             )
 

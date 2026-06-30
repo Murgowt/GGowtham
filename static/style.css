@@ -673,6 +673,7 @@ body {
 .source-badge.source-splitwise { color: #ffb86b; }
 .source-badge.source-transfer { color: #8be9fd; }
 .source-badge.source-settlement { color: #ffb86b; }
+.source-badge.source-pending { color: #f1fa8c; }
 
 .metrics-row-4 .metric {
   padding: 0.875rem 0.25rem;
@@ -815,4 +816,8 @@ body {
 
 .transactions .holding-meta {
   flex-wrap: wrap;
+}
+
+.transaction-row-pending {
+  opacity: 0.85;
 }

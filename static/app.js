@@ -98,34 +98,22 @@ function formatTxnAmount(amount) {
   return `<span class="${cls}">${sign}${formatMoney(amount)}</span>`;
 }
 
-function displayTxnAmount(t) {
-  if (t.txn_type === "share" && t.source === "splitwise" && (t.owed_share ?? 0) === 0 && t.paid_share > 0) {
-    return formatTxnAmount(t.paid_share);
-  }
-  return formatTxnAmount(t.amount);
-}
-
 function tickerBadge(ticker) {
   return ticker.length <= 4 ? ticker : ticker.slice(0, 3);
 }
 
-function sourceLabel(source, txnType) {
+function sourceLabel(source, txnType, pending = false) {
+  if (pending) return "Pending";
   if (txnType === "settlement") return "Settlement";
   if (txnType === "transfer") return "Transfer";
   return { bank: "Bank", card: "Card", splitwise: "Splitwise" }[source] || source;
 }
 
-function sourceBadgeClass(source, txnType) {
+function sourceBadgeClass(source, txnType, pending = false) {
+  if (pending) return "source-badge source-pending";
   if (txnType === "settlement") return "source-badge source-settlement";
   if (txnType === "transfer") return "source-badge source-transfer";
   return `source-badge source-${source}`;
-}
-
-function transactionSubtitle(t) {
-  if (t.txn_type === "share" && t.source === "splitwise" && (t.owed_share ?? 0) === 0 && t.paid_share > 0) {
-    return `Paid on card · awaiting ${formatMoney(t.paid_share)}`;
-  }
-  return mediumForTransaction(t).label;
 }
 
 function mediumForTransaction(t) {
@@ -400,17 +388,17 @@ function renderSpending(data) {
     transactionsList.innerHTML = sorted.map((t) => {
       const medium = mediumForTransaction(t);
       return `
-      <li class="holding transaction-row">
+      <li class="holding transaction-row${t.pending ? " transaction-row-pending" : ""}">
         ${mediumIconHtml(t, logos)}
         <div class="holding-info">
           <div class="ticker">${t.description}</div>
           <div class="holding-meta">
-            <span class="shares">${transactionSubtitle(t)}</span>
-            <span class="${sourceBadgeClass(t.source, t.txn_type)}">${sourceLabel(t.source, t.txn_type)} · ${formatShortDate(t.date)}</span>
+            <span class="shares">${medium.label}</span>
+            <span class="${sourceBadgeClass(t.source, t.txn_type, t.pending)}">${sourceLabel(t.source, t.txn_type, t.pending)} · ${formatShortDate(t.date)}</span>
           </div>
         </div>
         <div class="holding-right">
-          <div class="value">${displayTxnAmount(t)}</div>
+          <div class="value">${formatTxnAmount(t.amount)}</div>
         </div>
       </li>`;
     }).join("");

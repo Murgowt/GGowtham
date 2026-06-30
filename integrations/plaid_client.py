@@ -257,6 +257,8 @@ def _map_plaid_transaction(txn: dict, account_lookup: dict[str, dict]) -> dict |
         "amount": amount,
         "currency": (txn.get("iso_currency_code") or "USD").upper(),
         "description": name,
+        "pending": bool(txn.get("pending")),
+        "pending_transaction_id": txn.get("pending_transaction_id"),
         "original_description": txn.get("name"),
         "merchant_name": txn.get("merchant_name"),
         "counterparties": counterparties,
@@ -349,6 +351,17 @@ def fetch_plaid_transactions(*, days: int = 30, force_refresh: bool = False) -> 
             if txn["id"] not in seen:
                 seen.add(txn["id"])
                 merged.append(txn)
+
+    superseded_pending = {
+        t["pending_transaction_id"]
+        for t in merged
+        if t.get("pending_transaction_id")
+    }
+    if superseded_pending:
+        merged = [
+            t for t in merged
+            if not (t.get("pending") and t["id"].removeprefix("plaid:") in superseded_pending)
+        ]
 
     return merged
 
