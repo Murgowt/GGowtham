@@ -868,7 +868,7 @@ def _fetch_splitwise(*, days: int) -> list[dict]:
         return splitwise_client.fetch_expenses(days=days)
     except Exception:
         logger.exception("Splitwise fetch failed")
-        return []
+        raise RuntimeError("Failed to fetch Splitwise expenses — try again in a few minutes") from None
 
 
 def _build_spending(
