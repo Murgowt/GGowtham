@@ -10,7 +10,7 @@
   <link rel="manifest" href="/static/manifest.json">
   <link rel="apple-touch-icon" href="/static/icon-192.png">
   <link rel="icon" href="/static/icon-192.png" type="image/png">
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/style.css?v=3">
   <title>Brain</title>
 </head>
 <body>
@@ -135,16 +135,25 @@
         <button type="button" class="tab disabled" data-tab="goals" disabled>Goals</button>
       </nav>
 
-      <div class="hero-card">
-        <span class="hero-label">Outflow this period</span>
-        <span id="spend-outflow" class="hero-value">—</span>
+      <nav class="spend-sub-nav" aria-label="Spend views">
+        <button type="button" class="spend-sub-tab active" data-spend-view="activity">Activity</button>
+        <button type="button" class="spend-sub-tab" data-spend-view="history">History</button>
+      </nav>
+
+      <div id="spend-activity-view">
+      <div class="hero-card" id="spend-budget-hero">
+        <span class="hero-label">Budget left</span>
+        <span id="spend-budget-remaining" class="hero-value">—</span>
         <p id="spend-month-label" class="hero-sub">—</p>
+        <div id="spend-budget-bar" class="budget-bar hidden">
+          <div id="spend-budget-bar-fill" class="budget-bar-fill"></div>
+        </div>
       </div>
 
       <div class="metrics-row metrics-row-4">
         <div class="metric">
-          <span class="metric-label">Bank</span>
-          <span id="spend-bank" class="metric-value">—</span>
+          <span class="metric-label">Used</span>
+          <span id="spend-budget-used" class="metric-value">—</span>
         </div>
         <div class="metric-divider"></div>
         <div class="metric">
@@ -154,12 +163,12 @@
         <div class="metric-divider"></div>
         <div class="metric">
           <span class="metric-label">Splitwise</span>
-          <span id="spend-splitwise" class="metric-value">—</span>
+          <span id="spend-splitwise-net" class="metric-value">—</span>
         </div>
         <div class="metric-divider"></div>
         <div class="metric">
-          <span class="metric-label">Invest</span>
-          <span id="spend-investments" class="metric-value">—</span>
+          <span class="metric-label">Budget</span>
+          <span id="spend-budget-total" class="metric-value">—</span>
         </div>
       </div>
 
@@ -171,7 +180,7 @@
       <p id="spend-overlap-hint" class="overlap-hint hidden">Shared expenses show your share when matched to a card charge.</p>
 
       <div class="holdings-section">
-        <h2 class="section-title">Recent activity</h2>
+        <h2 class="section-title">Expenses</h2>
         <ul id="transactions-list" class="holdings transactions"></ul>
       </div>
 
@@ -182,6 +191,45 @@
         </span>
         <p id="spend-updated-at" class="updated-at"></p>
       </footer>
+      </div>
+
+      <div id="spend-history-view" class="hidden">
+        <div class="holdings-section">
+          <h2 class="section-title">Monthly overview</h2>
+          <p class="history-hint">Billing periods run from the 6th to the 5th. Select a month to load its total.</p>
+          <ul id="history-periods-list" class="holdings history-periods"></ul>
+        </div>
+      </div>
+
+      <div id="spend-history-detail-view" class="hidden">
+        <button id="history-back-btn" class="btn text history-back" type="button">← Back to history</button>
+        <div class="hero-card">
+          <span class="hero-label">Total spent</span>
+          <span id="history-detail-total" class="hero-value">—</span>
+          <p id="history-detail-label" class="hero-sub">—</p>
+        </div>
+        <div class="metrics-row metrics-row-3">
+          <div class="metric">
+            <span class="metric-label">Splitwise shares</span>
+            <span id="history-detail-shares" class="metric-value">—</span>
+          </div>
+          <div class="metric-divider"></div>
+          <div class="metric">
+            <span class="metric-label">Bank (direct)</span>
+            <span id="history-detail-bank" class="metric-value">—</span>
+          </div>
+          <div class="metric-divider"></div>
+          <div class="metric">
+            <span class="metric-label">Card (direct)</span>
+            <span id="history-detail-card" class="metric-value">—</span>
+          </div>
+        </div>
+        <p id="history-detail-excluded" class="history-excluded hidden"></p>
+        <div class="holdings-section">
+          <h2 class="section-title">Transactions</h2>
+          <ul id="history-detail-txns" class="holdings transactions"></ul>
+        </div>
+      </div>
     </section>
 
     <section id="settings-screen" class="screen hidden">
@@ -206,6 +254,9 @@
         <p id="splitwise-status-text" class="settings-desc">Splitwise: not configured</p>
         <input type="password" id="splitwise-key-input" class="settings-input" placeholder="Splitwise API key" autocomplete="off">
         <button id="save-splitwise-btn" class="btn secondary">Save Splitwise key</button>
+        <p class="settings-desc">Monthly budget (billing cycle starts on the 6th).</p>
+        <input type="number" id="monthly-budget-input" class="settings-input" min="0" step="50" inputmode="decimal" placeholder="2200">
+        <button id="save-budget-btn" class="btn secondary">Save budget</button>
         <p id="spending-settings-hint" class="notifications-hint hidden"></p>
       </div>
 
@@ -229,6 +280,6 @@
       <div class="spinner"></div>
     </div>
   </div>
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=9"></script>
 </body>
 </html>

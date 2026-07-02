@@ -42,24 +42,47 @@ const totalReturnPctEl = document.getElementById("total-return-pct");
 const statusEl = document.getElementById("status");
 const statusTextEl = document.getElementById("status-text");
 const updatedAtEl = document.getElementById("updated-at");
-const spendOutflowEl = document.getElementById("spend-outflow");
+const spendBudgetRemainingEl = document.getElementById("spend-budget-remaining");
+const spendBudgetHeroEl = document.getElementById("spend-budget-hero");
+const spendBudgetBarEl = document.getElementById("spend-budget-bar");
+const spendBudgetBarFillEl = document.getElementById("spend-budget-bar-fill");
 const spendMonthLabelEl = document.getElementById("spend-month-label");
-const spendBankEl = document.getElementById("spend-bank");
+const spendBudgetUsedEl = document.getElementById("spend-budget-used");
 const spendCardEl = document.getElementById("spend-card");
-const spendSplitwiseEl = document.getElementById("spend-splitwise");
-const spendInvestmentsEl = document.getElementById("spend-investments");
+const spendSplitwiseNetEl = document.getElementById("spend-splitwise-net");
+const spendBudgetTotalEl = document.getElementById("spend-budget-total");
+const monthlyBudgetInput = document.getElementById("monthly-budget-input");
+const saveBudgetBtn = document.getElementById("save-budget-btn");
 const spendStatusEl = document.getElementById("spend-status");
 const spendStatusTextEl = document.getElementById("spend-status-text");
 const spendUpdatedAtEl = document.getElementById("spend-updated-at");
+const spendActivityView = document.getElementById("spend-activity-view");
+const spendHistoryView = document.getElementById("spend-history-view");
+const spendHistoryDetailView = document.getElementById("spend-history-detail-view");
+const historyPeriodsList = document.getElementById("history-periods-list");
+const historyBackBtn = document.getElementById("history-back-btn");
+const historyDetailTotalEl = document.getElementById("history-detail-total");
+const historyDetailLabelEl = document.getElementById("history-detail-label");
+const historyDetailCardEl = document.getElementById("history-detail-card");
+const historyDetailBankEl = document.getElementById("history-detail-bank");
+const historyDetailSharesEl = document.getElementById("history-detail-shares");
+const historyDetailExcludedEl = document.getElementById("history-detail-excluded");
+const historyDetailTxnsList = document.getElementById("history-detail-txns");
 
 let activeTab = "invest";
+let spendView = "activity";
+let historyPeriodKey = null;
 let settingsReturnTab = "invest";
 let plaidScriptPromise = null;
 let spendPollTimer = null;
 const SPEND_POLL_MS = 30_000;
 
-function show(el) { el.classList.remove("hidden"); }
-function hide(el) { el.classList.add("hidden"); }
+function show(el) { el?.classList.remove("hidden"); }
+function hide(el) { el?.classList.add("hidden"); }
+
+function setText(el, value) {
+  if (el) el.textContent = value;
+}
 
 function setLoading(on) {
   on ? show(loading) : hide(loading);
@@ -69,6 +92,12 @@ function setLoading(on) {
 
 function formatMoney(n) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
+}
+
+function formatSignedMoney(n) {
+  if (n > 0) return `+${formatMoney(n)}`;
+  if (n < 0) return `−${formatMoney(Math.abs(n))}`;
+  return formatMoney(0);
 }
 
 function formatPct(n) {
@@ -106,6 +135,7 @@ function sourceLabel(source, txnType, pending = false) {
   if (pending) return "Pending";
   if (txnType === "settlement") return "Settlement";
   if (txnType === "transfer") return "Transfer";
+  if (txnType === "cc_payment") return "CC payment";
   return { bank: "Bank", card: "Card", splitwise: "Splitwise" }[source] || source;
 }
 
@@ -199,6 +229,234 @@ function sortTransactionsForDisplay(transactions) {
   return [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date));
 }
 
+function renderExpenseRows(transactions, logos = {}) {
+  const sorted = sortTransactionsForDisplay(transactions);
+  return sorted.map((t) => {
+    const medium = mediumForTransaction(t);
+    const excluded = Boolean(t.excluded_from_total);
+    const edited = Boolean(t.amount_edited);
+    const actionBtn = excluded
+      ? `<button type="button" class="txn-exclude-btn txn-include-btn" data-txn-id="${escapeHtml(t.id)}" aria-label="Include in budget" title="Include in budget">✓</button>`
+      : `<button type="button" class="txn-exclude-btn" data-txn-id="${escapeHtml(t.id)}" aria-label="Exclude from budget" title="Exclude from budget">×</button>`;
+    const editBtn = `
+      <button type="button" class="txn-edit-btn" data-txn-id="${escapeHtml(t.id)}" data-current-amount="${t.amount}" data-description=${JSON.stringify(t.description || "")} aria-label="Edit amount" title="Edit amount">
+        <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 20h9"/>
+          <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+        </svg>
+      </button>`;
+    return `
+    <li class="holding transaction-row expense-txn-row${t.pending ? " transaction-row-pending" : ""}${excluded ? " transaction-row-excluded" : ""}${edited ? " transaction-row-edited" : ""}">
+      ${mediumIconHtml(t, logos)}
+      <div class="holding-info">
+        <div class="ticker">${escapeHtml(t.description)}${excluded ? ' <span class="txn-excluded-tag">Excluded</span>' : ""}${edited ? ' <span class="txn-edited-tag" title="Amount edited">✎</span>' : ""}</div>
+        <div class="holding-meta">
+          <span class="shares">${medium.label}</span>
+          <span class="${sourceBadgeClass(t.source, t.txn_type, t.pending)}">${sourceLabel(t.source, t.txn_type, t.pending)} · ${formatShortDate(t.date)}</span>
+        </div>
+      </div>
+      <div class="holding-right expense-txn-actions">
+        <div class="value">${formatTxnAmount(t.amount)}</div>
+        ${editBtn}
+        ${actionBtn}
+      </div>
+    </li>`;
+  }).join("");
+}
+
+function renderHistoryTransactionRows(transactions, logos = {}) {
+  return renderExpenseRows(transactions, logos);
+}
+
+function escapeHtml(text) {
+  return String(text ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+async function toggleExpenseExclusion(txnId, including) {
+  if (!including) {
+    const ok = window.confirm("Exclude this expense from your budget?");
+    if (!ok) return;
+  }
+  if (including) {
+    await api(`/api/spending/exclusions/${encodeURIComponent(txnId)}`, { method: "DELETE" });
+  } else {
+    await api("/api/spending/exclusions", {
+      method: "POST",
+      body: JSON.stringify({ txn_id: txnId }),
+    });
+  }
+}
+
+async function editExpenseAmount(txnId, currentAmount, description) {
+  const current = Number(currentAmount);
+  const defaultVal = Math.abs(current).toFixed(2);
+  const raw = window.prompt(`Edit budget amount for "${description}"`, defaultVal);
+  if (raw === null) return;
+
+  const parsed = Number(String(raw).replace(/[$,]/g, "").trim());
+  if (!Number.isFinite(parsed)) {
+    alert("Enter a valid amount.");
+    return;
+  }
+
+  let signed = parsed;
+  if (current < 0 && parsed > 0) signed = -parsed;
+  else if (current > 0 && parsed < 0) signed = Math.abs(parsed);
+
+  await api("/api/spending/overrides", {
+    method: "PUT",
+    body: JSON.stringify({ txn_id: txnId, amount: signed }),
+  });
+}
+
+async function refreshSpendingAfterTxnChange() {
+  if (historyPeriodKey && spendView === "history-detail") {
+    await openHistoryPeriod(historyPeriodKey);
+  }
+  if (activeTab === "spend") {
+    await loadSpending(false, { silent: true });
+  }
+}
+
+function bindExpenseTxnButtons(container) {
+  if (!container) return;
+  container.querySelectorAll(".txn-edit-btn").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      try {
+        await editExpenseAmount(btn.dataset.txnId, btn.dataset.currentAmount, btn.dataset.description);
+        await refreshSpendingAfterTxnChange();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
+  container.querySelectorAll(".txn-exclude-btn").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const txnId = btn.dataset.txnId;
+      const including = btn.classList.contains("txn-include-btn");
+      try {
+        await toggleExpenseExclusion(txnId, including);
+        await refreshSpendingAfterTxnChange();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
+}
+
+function bindHistoryTxnButtons() {
+  bindExpenseTxnButtons(historyDetailTxnsList);
+}
+
+function setSpendView(view) {
+  spendView = view;
+  document.querySelectorAll(".spend-sub-tab").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.spendView === view);
+  });
+  const showActivity = view === "activity";
+  const showHistory = view === "history";
+  const showDetail = view === "history-detail";
+  showActivity ? show(spendActivityView) : hide(spendActivityView);
+  showHistory ? show(spendHistoryView) : hide(spendHistoryView);
+  showDetail ? show(spendHistoryDetailView) : hide(spendHistoryDetailView);
+  if (showHistory) loadSpendingHistory();
+}
+
+function renderHistoryList(data) {
+  const periods = data.periods || [];
+  if (!periods.length) {
+    historyPeriodsList.innerHTML = "";
+    return;
+  }
+
+  let html = "";
+  let lastYear = null;
+  for (const p of periods) {
+    const year = p.label.split(", ").pop();
+    if (year !== lastYear) {
+      html += `<li class="history-year">${year}</li>`;
+      lastYear = year;
+    }
+    const currentBadge = p.is_current ? '<span class="history-current-badge">Current</span>' : "";
+    html += `
+    <li class="holding history-period-row" data-period-key="${p.key}">
+      <div class="holding-info">
+        <div class="ticker">${p.label}</div>
+        <div class="holding-meta">${currentBadge}</div>
+      </div>
+    </li>`;
+  }
+  historyPeriodsList.innerHTML = html;
+  historyPeriodsList.querySelectorAll(".history-period-row").forEach((row) => {
+    row.addEventListener("click", () => openHistoryPeriod(row.dataset.periodKey));
+  });
+}
+
+function renderHistoryDetail(data) {
+  const spend = data.spend || {};
+  historyDetailTotalEl.textContent = formatMoney(spend.total_spend || 0);
+  historyDetailLabelEl.textContent = data.label || "";
+  historyDetailSharesEl.textContent = formatMoney(
+    spend.splitwise_consumption ?? spend.splitwise_your_shares ?? 0,
+  );
+  historyDetailBankEl.textContent = formatMoney(spend.bank_spend || 0);
+  historyDetailCardEl.textContent = formatMoney(spend.card_spend || 0);
+
+  const parts = [];
+  if (spend.plaid_matched_to_splitwise > 0) {
+    parts.push(`${formatMoney(spend.plaid_matched_to_splitwise)} in bank/card charges linked to Splitwise (not double-counted).`);
+  }
+  if (spend.excluded_cc_payments > 0) {
+    parts.push(`${formatMoney(spend.excluded_cc_payments)} in credit card bill payments excluded.`);
+  }
+  const userExcluded = (data.transactions || []).filter((t) => t.excluded_from_total).length;
+  if (userExcluded > 0) {
+    parts.push(`${userExcluded} expense${userExcluded === 1 ? "" : "s"} manually excluded from this total.`);
+  }
+  if (parts.length) {
+    historyDetailExcludedEl.textContent = parts.join(" ");
+    show(historyDetailExcludedEl);
+  } else {
+    hide(historyDetailExcludedEl);
+  }
+
+  historyDetailTxnsList.innerHTML = renderHistoryTransactionRows(data.transactions || [], data.logos || {});
+  bindHistoryTxnButtons();
+}
+
+async function loadSpendingHistory() {
+  try {
+    const data = await api("/api/spending/history");
+    renderHistoryList(data);
+  } catch (err) {
+    historyPeriodsList.innerHTML = `<li class="history-empty">${err.message}</li>`;
+  }
+}
+
+async function openHistoryPeriod(periodKey) {
+  historyPeriodKey = periodKey;
+  setLoading(true);
+  try {
+    const data = await api(`/api/spending/history/${periodKey}`);
+    renderHistoryDetail(data);
+    spendView = "history-detail";
+    hide(spendActivityView);
+    hide(spendHistoryView);
+    show(spendHistoryDetailView);
+  } catch (err) {
+    historyPeriodsList.innerHTML = `<li class="history-empty">${err.message}</li>`;
+    setSpendView("history");
+  } finally {
+    setLoading(false);
+  }
+}
+
 function isStandalone() {
   return window.matchMedia("(display-mode: standalone)").matches
     || window.navigator.standalone === true;
@@ -268,6 +526,7 @@ function showSpend() {
   hide(portfolioScreen);
   show(spendingScreen);
   setActiveTab("spend");
+  setSpendView("activity");
   startSpendPolling();
 }
 
@@ -358,15 +617,47 @@ function renderPortfolio(data) {
   updatedAtEl.textContent = `Updated ${formatTime(data.updated_at)}`;
 }
 
+function resetSpendBudgetUI() {
+  setText(spendBudgetRemainingEl, "—");
+  setText(spendMonthLabelEl, "—");
+  setText(spendBudgetUsedEl, "—");
+  setText(spendCardEl, "—");
+  setText(spendSplitwiseNetEl, "—");
+  setText(spendBudgetTotalEl, "—");
+  spendBudgetHeroEl?.classList.remove("over-budget");
+  hide(spendBudgetBarEl);
+}
+
 function renderSpending(data) {
   const summary = data.summary || {};
   const logos = data.logos || {};
-  spendOutflowEl.textContent = formatMoney(summary.month_outflow || 0);
-  spendMonthLabelEl.textContent = summary.month_label || "This month";
-  spendBankEl.textContent = formatMoney(summary.by_source?.bank || 0);
-  spendCardEl.textContent = formatMoney(summary.by_source?.card || 0);
-  spendSplitwiseEl.textContent = formatMoney(summary.by_source?.splitwise || 0);
-  spendInvestmentsEl.textContent = formatMoney(summary.investments_net ?? summary.investments_outflow ?? 0);
+  const budget = summary.monthly_budget ?? 0;
+  const used = summary.budget_used ?? 0;
+  const remaining = summary.budget_remaining ?? budget;
+  const cardSpend = summary.budget_card_spend ?? summary.by_source?.card ?? 0;
+  const splitwiseNet = summary.budget_splitwise_net ?? 0;
+
+  setText(spendBudgetRemainingEl, formatMoney(remaining));
+  spendBudgetHeroEl?.classList.toggle("over-budget", remaining < 0);
+  setText(
+    spendMonthLabelEl,
+    budget
+      ? `${formatMoney(used)} used of ${formatMoney(budget)} · ${summary.month_label || "This period"}`
+      : summary.month_label || "This period",
+  );
+  setText(spendBudgetUsedEl, formatMoney(used));
+  setText(spendCardEl, formatMoney(cardSpend));
+  setText(spendSplitwiseNetEl, formatSignedMoney(splitwiseNet));
+  setText(spendBudgetTotalEl, formatMoney(budget));
+
+  if (budget > 0 && spendBudgetBarEl && spendBudgetBarFillEl) {
+    show(spendBudgetBarEl);
+    const pct = Math.min(100, Math.max(0, (remaining / budget) * 100));
+    spendBudgetBarFillEl.style.width = `${pct}%`;
+    spendBudgetBarFillEl.classList.toggle("over", remaining < 0);
+  } else {
+    hide(spendBudgetBarEl);
+  }
 
   hide(spendOverlapHint);
 
@@ -384,24 +675,8 @@ function renderSpending(data) {
   if (!data.transactions?.length) {
     transactionsList.innerHTML = "";
   } else {
-    const sorted = sortTransactionsForDisplay(data.transactions);
-    transactionsList.innerHTML = sorted.map((t) => {
-      const medium = mediumForTransaction(t);
-      return `
-      <li class="holding transaction-row${t.pending ? " transaction-row-pending" : ""}">
-        ${mediumIconHtml(t, logos)}
-        <div class="holding-info">
-          <div class="ticker">${t.description}</div>
-          <div class="holding-meta">
-            <span class="shares">${medium.label}</span>
-            <span class="${sourceBadgeClass(t.source, t.txn_type, t.pending)}">${sourceLabel(t.source, t.txn_type, t.pending)} · ${formatShortDate(t.date)}</span>
-          </div>
-        </div>
-        <div class="holding-right">
-          <div class="value">${formatTxnAmount(t.amount)}</div>
-        </div>
-      </li>`;
-    }).join("");
+    transactionsList.innerHTML = renderExpenseRows(data.transactions, logos);
+    bindExpenseTxnButtons(transactionsList);
   }
 
   spendUpdatedAtEl.textContent = data.updated_at
@@ -463,6 +738,10 @@ function updateSpendingSettingsUI(status) {
   splitwiseStatusText.textContent = status.splitwise_configured
     ? "Splitwise: configured"
     : "Splitwise: add your personal API key";
+
+  if (monthlyBudgetInput && status.monthly_budget != null) {
+    monthlyBudgetInput.value = String(status.monthly_budget);
+  }
 }
 
 async function loadSpendingSettings() {
@@ -592,11 +871,7 @@ async function loadSpending(refresh = false, { silent = false } = {}) {
     if (!hasSource) {
       show(spendConnectBanner);
       transactionsList.innerHTML = "";
-      spendOutflowEl.textContent = "—";
-      spendBankEl.textContent = "—";
-      spendCardEl.textContent = "—";
-      spendSplitwiseEl.textContent = "—";
-      spendInvestmentsEl.textContent = "—";
+      resetSpendBudgetUI();
       spendStatusEl.classList.add("offline");
       spendStatusTextEl.textContent = "Not connected";
       spendUpdatedAtEl.textContent = "";
@@ -682,6 +957,34 @@ async function connectPlaid() {
   } catch (err) {
     spendingSettingsHint.textContent = err.message;
     show(spendingSettingsHint);
+    setLoading(false);
+  }
+}
+
+async function saveMonthlyBudget() {
+  const raw = monthlyBudgetInput?.value?.trim();
+  const amount = raw === "" ? 0 : Number(raw);
+  if (!Number.isFinite(amount) || amount < 0) {
+    spendingSettingsHint.textContent = "Enter a valid budget amount.";
+    show(spendingSettingsHint);
+    return;
+  }
+
+  setLoading(true);
+  hide(spendingSettingsHint);
+  try {
+    await api("/api/spending/budget", {
+      method: "PUT",
+      body: JSON.stringify({ monthly_budget: amount }),
+    });
+    spendingSettingsHint.textContent = "Budget saved.";
+    show(spendingSettingsHint);
+    await loadSpendingSettings();
+    if (activeTab === "spend") await loadSpending(true);
+  } catch (err) {
+    spendingSettingsHint.textContent = err.message;
+    show(spendingSettingsHint);
+  } finally {
     setLoading(false);
   }
 }
@@ -774,7 +1077,12 @@ loginForm.addEventListener("submit", async (e) => {
 });
 
 refreshBtn.addEventListener("click", () => loadPortfolio(true));
-spendRefreshBtn.addEventListener("click", () => loadSpending(true));
+spendRefreshBtn.addEventListener("click", () => {
+  if (spendView === "history") loadSpendingHistory();
+  else if (spendView === "history-detail" && historyPeriodKey) {
+    openHistoryPeriod(historyPeriodKey);
+  } else loadSpending(true);
+});
 settingsBtn.addEventListener("click", () => showSettings("invest"));
 spendSettingsBtn.addEventListener("click", () => showSettings("spend"));
 spendSettingsShortcut.addEventListener("click", () => showSettings("spend"));
@@ -782,8 +1090,17 @@ settingsBackBtn.addEventListener("click", showMainFromSettings);
 connectBtn.addEventListener("click", connectRobinhood);
 connectPlaidBtn.addEventListener("click", connectPlaid);
 saveSplitwiseBtn.addEventListener("click", saveSplitwiseKey);
+saveBudgetBtn?.addEventListener("click", saveMonthlyBudget);
 enableNotificationsBtn.addEventListener("click", enableNotifications);
 testNotificationBtn.addEventListener("click", sendTestNotification);
+
+document.querySelectorAll(".spend-sub-tab").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    if (btn.dataset.spendView === "activity") setSpendView("activity");
+    else setSpendView("history");
+  });
+});
+historyBackBtn.addEventListener("click", () => setSpendView("history"));
 
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible" && activeTab === "spend") {

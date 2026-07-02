@@ -64,3 +64,26 @@ class SpendingSnapshot(Base):
     )
     transactions_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
     summary_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
+class SpendingExclusion(Base):
+    """User-hidden transactions excluded from monthly spend totals."""
+
+    __tablename__ = "spending_exclusions"
+
+    txn_id: Mapped[str] = mapped_column(String(200), primary_key=True)
+    excluded_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
+
+
+class SpendingAmountOverride(Base):
+    """User-edited budget amounts for individual transactions."""
+
+    __tablename__ = "spending_amount_overrides"
+
+    txn_id: Mapped[str] = mapped_column(String(200), primary_key=True)
+    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    edited_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )

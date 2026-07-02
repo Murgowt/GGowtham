@@ -9,7 +9,16 @@ from integrations.spending import (
     get_spending_status,
     invalidate_spending_cache,
 )
-from db.database import set_splitwise_api_key
+from integrations.spending_history import get_spending_history, get_spending_history_period
+from db.database import (
+    clear_spending_amount_override,
+    exclude_spending_txn,
+    get_monthly_budget,
+    include_spending_txn,
+    set_monthly_budget,
+    set_spending_amount_override,
+    set_splitwise_api_key,
+)
 
 router = APIRouter(prefix="/api", tags=["spending"])
 
@@ -24,6 +33,19 @@ class PlaidExchangeRequest(BaseModel):
 
 class PlaidDisconnectRequest(BaseModel):
     item_id: str = Field(min_length=1)
+
+
+class SpendingExclusionRequest(BaseModel):
+    txn_id: str = Field(min_length=1, max_length=200)
+
+
+class MonthlyBudgetRequest(BaseModel):
+    monthly_budget: float = Field(ge=0, le=1_000_000)
+
+
+class SpendingAmountOverrideRequest(BaseModel):
+    txn_id: str = Field(min_length=1, max_length=200)
+    amount: float = Field(ge=-1_000_000, le=1_000_000)
 
 
 @router.get("/spending/status")
@@ -63,6 +85,67 @@ def spending_summary(request: Request, refresh: bool = False, days: int = 30):
         "source": data.source,
         "updated_at": data.updated_at.isoformat(),
     }
+
+
+@router.get("/spending/history")
+def spending_history_list(request: Request, response: Response):
+    require_auth(request)
+    response.headers["Cache-Control"] = "no-store"
+    return get_spending_history()
+
+
+@router.get("/spending/history/{period_key}")
+def spending_history_detail(request: Request, response: Response, period_key: str):
+    require_auth(request)
+    response.headers["Cache-Control"] = "no-store"
+    detail = get_spending_history_period(period_key)
+    if not detail:
+        raise HTTPException(status_code=404, detail="Billing period not found")
+    return {
+        **detail,
+        "logos": get_spending_logos(),
+    }
+
+
+@router.put("/spending/budget")
+def spending_set_budget(request: Request, body: MonthlyBudgetRequest):
+    require_auth(request)
+    set_monthly_budget(body.monthly_budget)
+    invalidate_spending_cache()
+    return {"monthly_budget": get_monthly_budget()}
+
+
+@router.post("/spending/exclusions")
+def spending_exclude_txn(request: Request, body: SpendingExclusionRequest):
+    require_auth(request)
+    exclude_spending_txn(body.txn_id.strip())
+    invalidate_spending_cache()
+    return {"ok": True, "txn_id": body.txn_id.strip(), "excluded": True}
+
+
+@router.delete("/spending/exclusions/{txn_id:path}")
+def spending_include_txn(request: Request, txn_id: str):
+    require_auth(request)
+    include_spending_txn(txn_id)
+    invalidate_spending_cache()
+    return {"ok": True, "txn_id": txn_id, "excluded": False}
+
+
+@router.put("/spending/overrides")
+def spending_set_amount_override(request: Request, body: SpendingAmountOverrideRequest):
+    require_auth(request)
+    txn_id = body.txn_id.strip()
+    set_spending_amount_override(txn_id, body.amount)
+    invalidate_spending_cache()
+    return {"ok": True, "txn_id": txn_id, "amount": round(body.amount, 2)}
+
+
+@router.delete("/spending/overrides/{txn_id:path}")
+def spending_clear_amount_override(request: Request, txn_id: str):
+    require_auth(request)
+    clear_spending_amount_override(txn_id)
+    invalidate_spending_cache()
+    return {"ok": True, "txn_id": txn_id, "amount_edited": False}
 
 
 @router.post("/splitwise/configure")

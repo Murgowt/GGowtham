@@ -2,7 +2,7 @@ from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from config import settings
-from db.models import AppSetting, Base, PlaidItem, PortfolioSnapshot, PushSubscription, SpendingSnapshot
+from db.models import AppSetting, Base, PlaidItem, PortfolioSnapshot, PushSubscription, SpendingAmountOverride, SpendingExclusion, SpendingSnapshot
 
 connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
 engine = create_engine(settings.database_url, connect_args=connect_args)
@@ -92,6 +92,8 @@ def list_push_subscriptions() -> list[dict]:
 
 
 SPLITWISE_API_KEY_SETTING = "splitwise_api_key"
+MONTHLY_BUDGET_SETTING = "monthly_budget"
+DEFAULT_MONTHLY_BUDGET = 2200.0
 
 
 def get_splitwise_api_key() -> str | None:
@@ -105,6 +107,20 @@ def get_splitwise_api_key() -> str | None:
 
 def set_splitwise_api_key(value: str) -> None:
     set_setting(SPLITWISE_API_KEY_SETTING, value)
+
+
+def get_monthly_budget() -> float:
+    stored = get_setting(MONTHLY_BUDGET_SETTING)
+    if stored is None:
+        return DEFAULT_MONTHLY_BUDGET
+    try:
+        return max(0.0, float(stored))
+    except ValueError:
+        return DEFAULT_MONTHLY_BUDGET
+
+
+def set_monthly_budget(amount: float) -> None:
+    set_setting(MONTHLY_BUDGET_SETTING, str(round(max(0.0, amount), 2)))
 
 
 def list_plaid_items() -> list[PlaidItem]:
@@ -202,3 +218,50 @@ def get_latest_spending_snapshot() -> SpendingSnapshot | None:
     with SessionLocal() as session:
         stmt = select(SpendingSnapshot).order_by(SpendingSnapshot.captured_at.desc()).limit(1)
         return session.scalars(stmt).first()
+
+
+def get_spending_exclusion_ids() -> set[str]:
+    with SessionLocal() as session:
+        rows = session.scalars(select(SpendingExclusion.txn_id)).all()
+        return set(rows)
+
+
+def exclude_spending_txn(txn_id: str) -> None:
+    with SessionLocal() as session:
+        if session.get(SpendingExclusion, txn_id):
+            return
+        session.add(SpendingExclusion(txn_id=txn_id))
+        session.commit()
+
+
+def include_spending_txn(txn_id: str) -> None:
+    with SessionLocal() as session:
+        row = session.get(SpendingExclusion, txn_id)
+        if row:
+            session.delete(row)
+            session.commit()
+
+
+def get_spending_amount_overrides() -> dict[str, float]:
+    with SessionLocal() as session:
+        rows = session.scalars(select(SpendingAmountOverride)).all()
+        return {row.txn_id: float(row.amount) for row in rows}
+
+
+def set_spending_amount_override(txn_id: str, amount: float) -> None:
+    amount = round(float(amount), 2)
+    with SessionLocal() as session:
+        row = session.get(SpendingAmountOverride, txn_id)
+        if row:
+            row.amount = amount
+        else:
+            session.add(SpendingAmountOverride(txn_id=txn_id, amount=amount))
+        session.commit()
+
+
+def clear_spending_amount_override(txn_id: str) -> None:
+    with SessionLocal() as session:
+        row = session.get(SpendingAmountOverride, txn_id)
+        if row:
+            session.delete(row)
+            session.commit()

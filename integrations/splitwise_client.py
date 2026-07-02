@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import httpx
 
@@ -119,6 +119,13 @@ def _base_txn(
 
 
 def fetch_expenses(*, days: int = 30) -> list[dict]:
+    cutoff = datetime.now(timezone.utc).date().fromordinal(
+        datetime.now(timezone.utc).date().toordinal() - days
+    )
+    return fetch_expenses_between(start=cutoff, end=datetime.now(timezone.utc).date())
+
+
+def fetch_expenses_between(*, start: date, end: date) -> list[dict]:
     if settings.mock_integrations:
         return []
 
@@ -126,10 +133,9 @@ def fetch_expenses(*, days: int = 30) -> list[dict]:
         return []
 
     user_id = get_current_user_id()
-    cutoff = datetime.now(timezone.utc).date().fromordinal(
-        datetime.now(timezone.utc).date().toordinal() - days
-    )
-    dated_after = cutoff.isoformat()
+    dated_after = start.isoformat()
+    # Splitwise dated_before is exclusive — add 1 day so expenses dated `end` are included.
+    dated_before = (end + timedelta(days=1)).isoformat()
 
     transactions: list[dict] = []
     offset = 0
@@ -144,6 +150,7 @@ def fetch_expenses(*, days: int = 30) -> list[dict]:
                     "limit": limit,
                     "offset": offset,
                     "dated_after": dated_after,
+                    "dated_before": dated_before,
                     "visible": True,
                 },
             )
@@ -213,6 +220,8 @@ def fetch_expenses(*, days: int = 30) -> list[dict]:
                     txn_type="share",
                     medium=medium,
                     net_balance=round(balance["net"], 2),
+                    owed_share=round(balance["owed"], 2),
+                    paid_share=round(balance["paid"], 2),
                 )
             )
 

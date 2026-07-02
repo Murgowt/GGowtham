@@ -15,6 +15,8 @@ def _share(**kwargs) -> dict:
         "date": _dt(1),
         "amount": -9.0,
         "net_balance": -9.0,
+        "owed_share": 9.0,
+        "paid_share": 0.0,
         "description": "Indian store",
     }
     base.update(kwargs)
@@ -151,3 +153,327 @@ def test_internal_transfer_hidden_from_spend():
     assert txn["txn_type"] == "transfer"
     assert txn.get("hidden") is True
     assert compute_summary(resolved)["month_outflow"] == 0
+
+
+def test_credit_card_payment_excluded_from_period_spend():
+    from datetime import datetime, timezone
+    from integrations.spending import compute_period_spend, iter_billing_periods, HISTORY_EPOCH
+
+    now = datetime.now(timezone.utc)
+    period_start, period_end = next(iter_billing_periods(HISTORY_EPOCH, now))
+    txns = apply_spending_rules([
+        _card(amount=-100.0, date=period_start.isoformat()),
+        {
+            "id": "bank:ccpay",
+            "source": "bank",
+            "date": period_start.isoformat(),
+            "amount": -500.0,
+            "description": "Payment to Chase card ending in 0133",
+            "plaid_category_detailed": "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT",
+        },
+        _share(amount=-20.0, net_balance=-20.0, owed_share=20.0, paid_share=0.0, date=period_start.isoformat()),
+    ])
+    spend = compute_period_spend(txns, period_start, period_end)
+    assert spend["card_spend"] == 100.0
+    assert spend["excluded_cc_payments"] == 500.0
+    assert spend["splitwise_adjustment"] == 20.0
+    assert spend["total_spend"] == 120.0
+
+
+def test_period_spend_splitwise_adjusts_fronted_expense():
+    from datetime import datetime, timezone
+    from integrations.spending import compute_period_spend, iter_billing_periods, HISTORY_EPOCH
+
+    now = datetime.now(timezone.utc)
+    period_start, period_end = next(iter_billing_periods(HISTORY_EPOCH, now))
+    txns = apply_spending_rules([
+        _card(amount=-6.75, description="Metra", date=period_start.isoformat()),
+        _share(
+            amount=6.75,
+            net_balance=6.75,
+            owed_share=0.0,
+            paid_share=6.75,
+            description="Metra",
+            date=period_start.isoformat(),
+        ),
+    ])
+    spend = compute_period_spend(txns, period_start, period_end)
+    assert spend["splitwise_net"] == 6.75
+    assert spend["total_spend"] == 0.0
+
+
+def test_period_spend_fronted_for_friends_deducts():
+    from datetime import datetime, timezone
+    from integrations.spending import compute_period_spend, iter_billing_periods, HISTORY_EPOCH
+
+    now = datetime.now(timezone.utc)
+    period_start, period_end = next(iter_billing_periods(HISTORY_EPOCH, now))
+    txns = apply_spending_rules([
+        _share(
+            amount=300.0,
+            net_balance=300.0,
+            owed_share=0.0,
+            paid_share=300.0,
+            description="Horseshoe",
+            date=period_start.isoformat(),
+        ),
+    ])
+    spend = compute_period_spend(txns, period_start, period_end)
+    assert spend["splitwise_net"] == 300.0
+    assert spend["total_spend"] == 0.0
+
+
+def test_period_spend_rent_and_splitwise_shares():
+    from datetime import datetime, timezone
+    from integrations.spending import compute_period_spend, iter_billing_periods, HISTORY_EPOCH
+
+    now = datetime.now(timezone.utc)
+    period_start, period_end = next(iter_billing_periods(HISTORY_EPOCH, now))
+    txns = apply_spending_rules([
+        {
+            "id": "bank:rent",
+            "source": "bank",
+            "date": period_start.isoformat(),
+            "amount": -950.0,
+            "description": "BILT CARD HOUSING",
+            "plaid_category_detailed": "RENT_AND_UTILITIES_RENT",
+        },
+        _share(
+            amount=-25.0,
+            net_balance=-25.0,
+            owed_share=25.0,
+            paid_share=0.0,
+            description="Groceries",
+            date=period_start.isoformat(),
+        ),
+    ])
+    spend = compute_period_spend(txns, period_start, period_end)
+    assert spend["splitwise_adjustment"] == 25.0
+    assert spend["bank_spend"] == 950.0
+    assert spend["total_spend"] == 975.0
+
+
+def test_period_spend_apartment_rent_only_counts_your_share():
+    from datetime import datetime, timezone
+    from integrations.spending import compute_period_spend, iter_billing_periods, HISTORY_EPOCH
+
+    now = datetime.now(timezone.utc)
+    period_start, period_end = next(iter_billing_periods(HISTORY_EPOCH, now))
+    txns = apply_spending_rules([
+        {
+            "id": "bank:rent",
+            "source": "bank",
+            "date": period_start.isoformat(),
+            "amount": -1901.95,
+            "description": "BILT CARD HOUSING PPD ID: 1844372402",
+            "plaid_category_detailed": "RENT_AND_UTILITIES_RENT",
+        },
+        _share(
+            amount=950.75,
+            net_balance=950.75,
+            owed_share=0.0,
+            paid_share=950.75,
+            description="Rent",
+            date=period_start.isoformat(),
+        ),
+        _share(
+            amount=-25.05,
+            net_balance=-25.05,
+            owed_share=25.05,
+            paid_share=0.0,
+            description="Food Poison 101",
+            date=period_start.isoformat(),
+        ),
+        {
+            "id": "bank:zelle",
+            "source": "bank",
+            "date": period_start.isoformat(),
+            "amount": -25.05,
+            "description": "Zelle payment to friend",
+        },
+    ])
+    spend = compute_period_spend(txns, period_start, period_end)
+    assert spend["splitwise_net"] == 925.7
+    assert spend["bank_spend"] == 951.2
+    assert spend["splitwise_consumption"] == 25.05
+    assert spend["total_spend"] == 976.25
+
+
+def test_period_spend_user_exclusion():
+    from datetime import datetime, timezone
+    from integrations.spending import compute_period_spend, iter_billing_periods, HISTORY_EPOCH
+
+    now = datetime.now(timezone.utc)
+    period_start, period_end = next(iter_billing_periods(HISTORY_EPOCH, now))
+    txns = apply_spending_rules([
+        _card(amount=-100.0, date=period_start.isoformat()),
+        _share(
+            amount=-50.0,
+            net_balance=-50.0,
+            owed_share=50.0,
+            paid_share=0.0,
+            description="Dinner",
+            date=period_start.isoformat(),
+        ),
+    ])
+    full = compute_period_spend(txns, period_start, period_end)
+    excluded = compute_period_spend(
+        txns, period_start, period_end, excluded_ids=frozenset({"splitwise:share:1"}),
+    )
+    assert full["total_spend"] == 150.0
+    assert excluded["total_spend"] == 100.0
+
+
+def test_budget_status_card_and_splitwise():
+    from datetime import datetime, timezone
+    from integrations.spending import apply_spending_rules, compute_budget_status, iter_billing_periods, HISTORY_EPOCH
+
+    now = datetime.now(timezone.utc)
+    period_start, period_end = next(iter_billing_periods(HISTORY_EPOCH, now))
+    txns = apply_spending_rules([
+        _card(amount=-200.0, date=period_start.isoformat()),
+        _share(
+            amount=150.0,
+            net_balance=150.0,
+            owed_share=0.0,
+            paid_share=150.0,
+            description="Reimbursement",
+            date=period_start.isoformat(),
+        ),
+    ])
+    status = compute_budget_status(txns, period_start, period_end, 2200.0)
+    assert status["budget_card_spend"] == 200.0
+    assert status["budget_splitwise_net"] == 150.0
+    assert status["budget_used"] == 50.0
+    assert status["budget_remaining"] == 2150.0
+
+    # $1800 left → $200 card → $1600 → +$150 splitwise → $1750
+    status2 = compute_budget_status(txns, period_start, period_end, 1800.0 + 50.0)
+    assert status2["budget_remaining"] == 1750.0
+
+
+def test_budget_splitwise_net_includes_all_splits():
+    from datetime import datetime, timezone
+    from integrations.spending import (
+        apply_spending_rules,
+        compute_budget_status,
+        iter_billing_periods,
+        HISTORY_EPOCH,
+        _filter_budget_list_records,
+        _public_transactions,
+    )
+
+    now = datetime.now(timezone.utc)
+    period_start, period_end = next(iter_billing_periods(HISTORY_EPOCH, now))
+    txns = apply_spending_rules([
+        _card(amount=-200.0, date=period_start.isoformat()),
+        _share(
+            amount=150.0,
+            net_balance=150.0,
+            owed_share=0.0,
+            paid_share=150.0,
+            description="Reimbursement",
+            date=period_start.isoformat(),
+        ),
+        _share(
+            amount=-40.0,
+            net_balance=-40.0,
+            owed_share=40.0,
+            paid_share=0.0,
+            description="Dinner",
+            date=period_start.isoformat(),
+        ),
+    ])
+    status = compute_budget_status(txns, period_start, period_end, 2200.0)
+    assert status["budget_splitwise_net"] == 110.0
+    assert status["budget_used"] == 90.0
+    assert status["budget_remaining"] == 2110.0
+
+    visible = _filter_budget_list_records(_public_transactions(txns))
+    assert len(visible) == 3
+
+
+def test_budget_status_user_exclusion():
+    from datetime import datetime, timezone
+    from integrations.spending import apply_spending_rules, compute_budget_status, iter_billing_periods, HISTORY_EPOCH
+
+    now = datetime.now(timezone.utc)
+    period_start, period_end = next(iter_billing_periods(HISTORY_EPOCH, now))
+    txns = apply_spending_rules([
+        _card(amount=-100.0, date=period_start.isoformat()),
+        _share(
+            amount=-50.0,
+            net_balance=-50.0,
+            owed_share=50.0,
+            paid_share=0.0,
+            description="Dinner",
+            date=period_start.isoformat(),
+        ),
+    ])
+    full = compute_budget_status(txns, period_start, period_end, 2200.0)
+    excluded = compute_budget_status(
+        txns, period_start, period_end, 2200.0,
+        excluded_ids=frozenset({"splitwise:share:1"}),
+    )
+    assert full["budget_used"] == 150.0
+    assert full["budget_remaining"] == 2050.0
+    assert excluded["budget_used"] == 100.0
+    assert excluded["budget_remaining"] == 2100.0
+    assert excluded["budget_user_excluded_count"] == 1
+
+
+def test_budget_excludes_settle_balances():
+    from datetime import datetime, timezone
+    from integrations.spending import apply_spending_rules, compute_budget_status, iter_billing_periods, HISTORY_EPOCH
+
+    now = datetime.now(timezone.utc)
+    period_start, period_end = next(iter_billing_periods(HISTORY_EPOCH, now))
+    txns = apply_spending_rules([
+        _card(amount=-200.0, date=period_start.isoformat()),
+        _share(
+            amount=-150.0,
+            net_balance=-150.0,
+            owed_share=150.0,
+            paid_share=0.0,
+            description="Settle balances",
+            date=period_start.isoformat(),
+        ),
+        _share(
+            amount=75.0,
+            net_balance=75.0,
+            owed_share=0.0,
+            paid_share=75.0,
+            description="Settle up balances",
+            date=period_start.isoformat(),
+        ),
+    ])
+    status = compute_budget_status(txns, period_start, period_end, 2200.0)
+    assert status["budget_card_spend"] == 200.0
+    assert status["budget_splitwise_net"] == 0.0
+    assert status["budget_used"] == 200.0
+    assert status["budget_remaining"] == 2000.0
+
+
+def test_budget_amount_override():
+    from datetime import datetime, timezone
+    from integrations.spending import (
+        apply_amount_overrides,
+        apply_spending_rules,
+        compute_budget_status,
+        iter_billing_periods,
+        HISTORY_EPOCH,
+    )
+
+    now = datetime.now(timezone.utc)
+    period_start, period_end = next(iter_billing_periods(HISTORY_EPOCH, now))
+    txns = apply_spending_rules([
+        _card(amount=-200.0, date=period_start.isoformat()),
+    ])
+    full = compute_budget_status(txns, period_start, period_end, 2200.0)
+    assert full["budget_used"] == 200.0
+
+    apply_amount_overrides(txns, {"card:1": -150.0})
+    edited = compute_budget_status(txns, period_start, period_end, 2200.0)
+    assert edited["budget_used"] == 150.0
+    assert edited["budget_remaining"] == 2050.0
+    assert txns[0]["amount_edited"] is True

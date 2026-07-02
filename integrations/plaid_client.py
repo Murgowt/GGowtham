@@ -272,9 +272,13 @@ def _map_plaid_transaction(txn: dict, account_lookup: dict[str, dict]) -> dict |
     }
 
 
-def _fetch_item_transactions(access_token: str, accounts: list[dict], *, days: int) -> list[dict]:
-    end = date.today()
-    start = end - timedelta(days=days)
+def _fetch_item_transactions(
+    access_token: str,
+    accounts: list[dict],
+    *,
+    start: date,
+    end: date,
+) -> list[dict]:
     account_lookup = {a["account_id"]: a for a in accounts if a.get("account_id")}
 
     transactions: list[dict] = []
@@ -335,7 +339,12 @@ def fetch_plaid_transactions(*, days: int = 30, force_refresh: bool = False) -> 
                 account.setdefault("institution_id", institution_id)
 
         try:
-            txns = _fetch_item_transactions(item.access_token, accounts, days=days)
+            txns = _fetch_item_transactions(
+                item.access_token,
+                accounts,
+                start=date.today() - timedelta(days=days),
+                end=date.today(),
+            )
         except httpx.HTTPError:
             logger.exception("Plaid transactions/get failed for item %s", item.item_id)
             continue
@@ -346,6 +355,63 @@ def fetch_plaid_transactions(*, days: int = 30, force_refresh: bool = False) -> 
             last_synced_at=datetime.now(timezone.utc),
             accounts_json=accounts,
         )
+
+        for txn in txns:
+            if txn["id"] not in seen:
+                seen.add(txn["id"])
+                merged.append(txn)
+
+    superseded_pending = {
+        t["pending_transaction_id"]
+        for t in merged
+        if t.get("pending_transaction_id")
+    }
+    if superseded_pending:
+        merged = [
+            t for t in merged
+            if not (t.get("pending") and t["id"].removeprefix("plaid:") in superseded_pending)
+        ]
+
+    return merged
+
+
+def fetch_plaid_transactions_between(
+    *,
+    start: date,
+    end: date,
+    force_refresh: bool = False,
+) -> list[dict]:
+    del force_refresh
+
+    if settings.mock_integrations or not has_connection():
+        return []
+
+    merged: list[dict] = []
+    seen: set[str] = set()
+
+    for item in list_plaid_items():
+        try:
+            accounts, institution_name, institution_id, _logo = _ensure_item_metadata(
+                item_id=item.item_id,
+                access_token=item.access_token,
+                institution_name=item.institution_name,
+                institution_id=item.institution_id,
+                existing_logo=item.institution_logo,
+            )
+        except httpx.HTTPError:
+            logger.exception("Plaid accounts/get failed for item %s", item.item_id)
+            accounts = item.accounts_json or []
+            institution_name = item.institution_name
+            institution_id = item.institution_id
+            for account in accounts:
+                account.setdefault("institution_name", institution_name)
+                account.setdefault("institution_id", institution_id)
+
+        try:
+            txns = _fetch_item_transactions(item.access_token, accounts, start=start, end=end)
+        except httpx.HTTPError:
+            logger.exception("Plaid transactions/get failed for item %s", item.item_id)
+            continue
 
         for txn in txns:
             if txn["id"] not in seen:
