@@ -7,6 +7,7 @@ from api.auth import require_auth
 from config import settings
 from db.database import delete_push_subscription, list_push_subscriptions, save_push_subscription
 from integrations.daily_summary import send_cron_test, send_daily_summary
+from integrations.spending_alerts import check_and_send_spending_alerts
 from integrations.webpush import is_configured, send_to_subscription
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
@@ -126,4 +127,22 @@ def cron_daily_summary(request: Request):
         return {"ok": True, **result, "message": "No subscribers — enable notifications in app"}
     if result["sent"] == 0:
         raise HTTPException(status_code=503, detail="Failed to send to any subscriber")
+    return {"ok": True, **result}
+
+
+@router.post("/cron/spending")
+def cron_spending_alerts(request: Request):
+    """Poll Plaid/Splitwise and push on new card charges or splits."""
+    require_cron_secret(request)
+    if not is_configured():
+        raise HTTPException(status_code=503, detail="Push notifications not configured")
+    try:
+        result = check_and_send_spending_alerts()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Spending alerts failed")
+        raise HTTPException(status_code=503, detail=f"Spending alerts failed: {exc}") from exc
+    if result.get("skipped"):
+        return {"ok": True, **result, "message": "No subscribers — enable notifications in app"}
     return {"ok": True, **result}

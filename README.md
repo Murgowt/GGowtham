@@ -173,6 +173,27 @@ Switch the hour when clocks change, or accept ±1 hour during the other season.
 
 For testing every 5 minutes, use `*/5 * * * *` and `CRON_MODE=test`.
 
+### 3b. Spending budget alerts (Railway)
+
+Get a push when a **new card charge** (including pending) or **Splitwise split** hits your budget. The notification shows the purchase and **budget remaining**.
+
+Add a **third Cron** service (or reuse the test cron with a different schedule):
+
+| Setting | Value |
+|---------|--------|
+| Start command | `python -m jobs.trigger_daily` |
+| Cron schedule | `*/5 * * * *` (every 5 minutes) |
+| Env vars | `APP_BASE_URL`, `CRON_SECRET`, **`CRON_MODE=spending`** |
+
+Requires notifications enabled in Settings (same VAPID keys as portfolio). The first cron run **seeds** existing transactions without notifying (no flood). Tapping a notification opens the Spend tab.
+
+```bash
+curl -X POST "https://your-app.up.railway.app/api/notifications/cron/spending" \
+  -H "X-Cron-Secret: your-cron-secret"
+```
+
+When the app is open on the Spend tab, it also polls every 15 seconds and shows a local notification immediately.
+
 Remove any **Custom Build Command** (`npm run build`) from the cron service.
 
 The repo uses `start.sh`: if the service name contains `cron`, it runs `python -m jobs.trigger_daily` and exits. Your **web** service keeps running uvicorn.

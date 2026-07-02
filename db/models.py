@@ -87,3 +87,14 @@ class SpendingAmountOverride(Base):
     edited_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
+
+
+class SpendingAlertSent(Base):
+    """Tracks purchase/split push alerts already delivered."""
+
+    __tablename__ = "spending_alert_sent"
+
+    alert_key: Mapped[str] = mapped_column(String(220), primary_key=True)
+    alerted_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )

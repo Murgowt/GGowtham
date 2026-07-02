@@ -2,7 +2,7 @@ from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from config import settings
-from db.models import AppSetting, Base, PlaidItem, PortfolioSnapshot, PushSubscription, SpendingAmountOverride, SpendingExclusion, SpendingSnapshot
+from db.models import AppSetting, Base, PlaidItem, PortfolioSnapshot, PushSubscription, SpendingAlertSent, SpendingAmountOverride, SpendingExclusion, SpendingSnapshot
 
 connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
 engine = create_engine(settings.database_url, connect_args=connect_args)
@@ -265,3 +265,20 @@ def clear_spending_amount_override(txn_id: str) -> None:
         if row:
             session.delete(row)
             session.commit()
+
+
+def get_spending_alert_keys() -> set[str]:
+    with SessionLocal() as session:
+        rows = session.scalars(select(SpendingAlertSent.alert_key)).all()
+        return set(rows)
+
+
+def mark_spending_alerts_sent(keys: list[str]) -> None:
+    if not keys:
+        return
+    with SessionLocal() as session:
+        for key in keys:
+            if session.get(SpendingAlertSent, key):
+                continue
+            session.add(SpendingAlertSent(alert_key=key))
+        session.commit()

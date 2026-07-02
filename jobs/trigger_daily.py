@@ -50,7 +50,11 @@ def run_trigger(*, dry_run: bool = False) -> int:
         logger.error("CRON_SECRET is required")
         return 1
 
-    path = "cron/test" if mode == "test" else "cron/daily"
+    path = (
+        "cron/test" if mode == "test"
+        else "cron/spending" if mode == "spending"
+        else "cron/daily"
+    )
     url = f"{base_url}/api/notifications/{path}"
     logger.info("Calling %s (CRON_MODE=%s)", url, mode)
 

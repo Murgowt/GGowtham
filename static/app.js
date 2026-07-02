@@ -75,7 +75,9 @@ let historyPeriodKey = null;
 let settingsReturnTab = "invest";
 let plaidScriptPromise = null;
 let spendPollTimer = null;
-const SPEND_POLL_MS = 30_000;
+const SPEND_POLL_MS = 15_000;
+let spendAlertBootstrapped = false;
+const seenSpendAlertKeys = new Set();
 
 function show(el) { el?.classList.remove("hidden"); }
 function hide(el) { el?.classList.add("hidden"); }
@@ -114,6 +116,55 @@ function formatPnl(n, pct) {
 function formatTime(iso) {
   const d = new Date(iso);
   return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
+function formatSpendAlertBody(txn, budgetRemaining) {
+  let desc = String(txn.description || "Expense").trim();
+  if (desc.length > 36) desc = `${desc.slice(0, 33)}…`;
+  const amount = Number(txn.amount) || 0;
+  const amtStr = amount > 0
+    ? `+${formatMoney(amount)}`
+    : `−${formatMoney(Math.abs(amount))}`;
+  const pending = txn.pending ? " · pending" : "";
+  const left = formatMoney(budgetRemaining).replace(/\.00$/, "");
+  return `${desc} ${amtStr}${pending} · ${left} left`;
+}
+
+function spendAlertKey(txn) {
+  if ((txn.source === "card" || txn.source === "bank") && txn.pending_transaction_id) {
+    return `plaid:${txn.pending_transaction_id}`;
+  }
+  return txn.id;
+}
+
+function isSpendAlertTxn(txn) {
+  if (txn.excluded_from_total) return false;
+  if (txn.source === "splitwise" && txn.txn_type === "share") return true;
+  if (txn.source === "card" && Number(txn.amount) < 0) return true;
+  return false;
+}
+
+function maybeNotifyNewSpend(data) {
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  const remaining = data.summary?.budget_remaining ?? 0;
+  const alertable = (data.transactions || []).filter(isSpendAlertTxn);
+
+  if (!spendAlertBootstrapped) {
+    alertable.forEach((t) => seenSpendAlertKeys.add(spendAlertKey(t)));
+    spendAlertBootstrapped = true;
+    return;
+  }
+
+  for (const txn of alertable) {
+    const key = spendAlertKey(txn);
+    if (seenSpendAlertKeys.has(key)) continue;
+    seenSpendAlertKeys.add(key);
+    new Notification("Brain · Spend", {
+      body: formatSpendAlertBody(txn, remaining),
+      icon: "/static/icon-192.png",
+      tag: key,
+    });
+  }
 }
 
 function formatShortDate(iso) {
@@ -679,6 +730,8 @@ function renderSpending(data) {
     bindExpenseTxnButtons(transactionsList);
   }
 
+  maybeNotifyNewSpend(data);
+
   spendUpdatedAtEl.textContent = data.updated_at
     ? `Updated ${formatTime(data.updated_at)}`
     : "";
@@ -1023,12 +1076,19 @@ async function checkAuth() {
     const { authenticated } = await api("/api/me");
     if (authenticated) {
       hide(loginScreen);
-      showInvest();
-      if (new URLSearchParams(window.location.search).get("connected") === "1") {
+      const params = new URLSearchParams(window.location.search);
+      const openTab = params.get("tab");
+      if (params.get("connected") === "1" || openTab) {
         window.history.replaceState({}, "", "/");
       }
       await registerServiceWorker();
-      await loadPortfolio(true);
+      if (openTab === "spend") {
+        showSpend();
+        await loadSpending(true);
+      } else {
+        showInvest();
+        await loadPortfolio(true);
+      }
     } else {
       show(loginScreen);
       hide(portfolioScreen);
