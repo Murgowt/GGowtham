@@ -2,7 +2,7 @@
 builder = "nixpacks"
 
 [deploy]
-startCommand = "python -m jobs.trigger_daily"
+startCommand = "CRON_MODE=budget_daily python -m jobs.trigger_daily"
 restartPolicyType = "never"
 # 9:00 AM Central (CDT) — use 0 15 * * * during CST (Nov–Mar)
 cronSchedule = "0 14 * * *"

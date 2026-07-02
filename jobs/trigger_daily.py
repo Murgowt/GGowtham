@@ -42,10 +42,23 @@ def _normalize_base_url(raw: str) -> str:
     return url
 
 
+def _resolve_cron_mode() -> str:
+    explicit = os.environ.get("CRON_MODE", "").strip().lower()
+    if explicit:
+        return explicit
+
+    service = os.environ.get("RAILWAY_SERVICE_NAME", "").lower()
+    if "spending" in service:
+        return "spending"
+    if "budget" in service:
+        return "budget_daily"
+    return "daily"
+
+
 def run_trigger(*, dry_run: bool = False) -> int:
     base_url = _normalize_base_url(os.environ.get("APP_BASE_URL", ""))
     secret = os.environ.get("CRON_SECRET", "")
-    mode = os.environ.get("CRON_MODE", "daily").lower()
+    mode = _resolve_cron_mode()
 
     if not base_url:
         logger.error(

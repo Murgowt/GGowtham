@@ -1,5 +1,5 @@
 self.addEventListener("push", (event) => {
-  let data = { title: "Brain", body: "Portfolio update" };
+  let data = { title: "Brain", body: "Update from Brain" };
   if (event.data) {
     try {
       data = event.data.json();

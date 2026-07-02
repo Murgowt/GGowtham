@@ -226,6 +226,17 @@ The repo uses `start.sh`: if the service name contains `cron`, it runs `python -
 
 If deploy logs show `Uvicorn running` on **brain-cron**, the service name must include `cron` (e.g. `brain-cron`).
 
+**Portfolio notifications every few seconds?** The spending cron service is probably using the **web** config (`/railway.toml`) instead of its own cron config. That sets **Restart policy: Always**, so the container restarts immediately after each run, calls `CRON_MODE=daily` (portfolio) in a loop, and floods your phone.
+
+Fix on **Spending-cron** (and any other cron service):
+
+1. **Settings → Config file path:** `/railway.spending.cron.toml` (not `/railway.toml`)
+2. Confirm **Restart policy: Never**
+3. Set **`CRON_MODE=spending`** (or rely on service name containing `spending`)
+4. Redeploy
+
+The web app also rate-limits portfolio summaries to **once per 20 hours** as a safety net.
+
 ### 4. Persist data across redeploys
 
 Railway containers have ephemeral filesystems — a default SQLite file is deleted on every deploy, which clears Plaid banks and push subscriptions.

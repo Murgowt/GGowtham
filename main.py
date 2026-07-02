@@ -96,7 +96,7 @@ def service_worker():
     return FileResponse(
         STATIC_DIR / "sw.js",
         media_type="application/javascript",
-        headers={"Service-Worker-Allowed": "/"},
+        headers={"Service-Worker-Allowed": "/", "Cache-Control": "no-cache"},
     )
 
 

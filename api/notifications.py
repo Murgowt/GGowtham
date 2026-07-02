@@ -145,6 +145,11 @@ def cron_spending_alerts(request: Request):
         raise HTTPException(status_code=503, detail=f"Spending alerts failed: {exc}") from exc
     if result.get("skipped"):
         return {"ok": True, **result, "message": "No subscribers — enable notifications in app"}
+    if result.get("new", 0) == 0 and result.get("sent", 0) == 0:
+        msg = "No new card charges or Splitwise splits since last check — nothing to notify"
+        if result.get("bootstrapped"):
+            msg = f"Bootstrapped {result['bootstrapped']} existing transactions — alerts start on the next new purchase"
+        return {"ok": True, **result, "message": msg}
     return {"ok": True, **result}
 
 
