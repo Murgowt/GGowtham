@@ -839,16 +839,6 @@ def _snapshot_to_spending(snapshot) -> SpendingData:
     )
 
 
-_cache: SpendingData | None = None
-_cache_at: datetime | None = None
-
-
-def invalidate_spending_cache() -> None:
-    global _cache, _cache_at
-    _cache = None
-    _cache_at = None
-
-
 def _dedupe_and_sort(transactions: list[dict]) -> list[dict]:
     seen: set[str] = set()
     unique: list[dict] = []
@@ -963,30 +953,14 @@ def get_spending_status() -> dict:
 
 
 def get_spending(*, force_refresh: bool = False, days: int = 30) -> SpendingData:
-    global _cache, _cache_at
+    del force_refresh  # always fetch live
 
     if settings.mock_integrations:
         return _mock_spending(days=days)
 
     now = datetime.now(timezone.utc)
-    cache_ttl = timedelta(minutes=settings.spending_cache_minutes)
     days = _fetch_days(now, days)
-
-    if force_refresh:
-        invalidate_spending_cache()
-
     splitwise_txns = _fetch_splitwise(days=days)
-
-    if not force_refresh and _cache and _cache_at and (now - _cache_at) < cache_ttl:
-        try:
-            plaid_txns = plaid_client.fetch_plaid_transactions(days=days, force_refresh=True)
-        except Exception:
-            logger.exception("Plaid fetch failed on cache refresh")
-            plaid_txns = [t for t in _cache.transactions if t.get("source") != "splitwise"]
-        result = _build_spending(plaid_txns, splitwise_txns, now=now, source="live", cached=True)
-        _cache = result
-        _cache_at = now
-        return result
 
     has_any_source = plaid_client.has_connection() or splitwise_client.is_configured()
     if not has_any_source:
@@ -1001,10 +975,7 @@ def get_spending(*, force_refresh: bool = False, days: int = 30) -> SpendingData
             source="empty",
         )
 
-    live = _fetch_live(days=days, splitwise_txns=splitwise_txns)
-    _cache = live
-    _cache_at = now
-    return live
+    return _fetch_live(days=days, splitwise_txns=splitwise_txns)
 
 # Backwards-compatible alias for any internal callers
 resolve_splitwise_overlaps = apply_spending_rules

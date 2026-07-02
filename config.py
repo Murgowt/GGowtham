@@ -50,7 +50,6 @@ class Settings(BaseSettings):
 
     cron_secret: str = ""
 
-    spending_cache_minutes: int = 15
     spending_period_start_day: int = 6
 
     plaid_client_id: str = ""

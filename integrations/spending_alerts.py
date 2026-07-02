@@ -94,7 +94,7 @@ def check_and_send_spending_alerts(*, bootstrap_if_empty: bool = True) -> dict:
         return {"sent": 0, "total": 0, "skipped": True, "new": 0}
 
     try:
-        data = get_spending(force_refresh=True)
+        data = get_spending()
     except Exception:
         logger.exception("Spending refresh failed for alerts")
         raise
@@ -166,7 +166,7 @@ def send_daily_budget_summary() -> dict:
         return {"sent": 0, "total": 0, "skipped": True}
 
     try:
-        data = get_spending(force_refresh=True)
+        data = get_spending()
     except Exception:
         logger.exception("Spending refresh failed for daily budget summary")
         raise

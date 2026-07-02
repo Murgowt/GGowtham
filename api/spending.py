@@ -7,7 +7,6 @@ from integrations.spending import (
     get_spending,
     get_spending_logos,
     get_spending_status,
-    invalidate_spending_cache,
 )
 from integrations.spending_history import get_spending_history, get_spending_history_period
 from db.database import (
@@ -111,7 +110,6 @@ def spending_history_detail(request: Request, response: Response, period_key: st
 def spending_set_budget(request: Request, body: MonthlyBudgetRequest):
     require_auth(request)
     set_monthly_budget(body.monthly_budget)
-    invalidate_spending_cache()
     return {"monthly_budget": get_monthly_budget()}
 
 
@@ -119,7 +117,6 @@ def spending_set_budget(request: Request, body: MonthlyBudgetRequest):
 def spending_exclude_txn(request: Request, body: SpendingExclusionRequest):
     require_auth(request)
     exclude_spending_txn(body.txn_id.strip())
-    invalidate_spending_cache()
     return {"ok": True, "txn_id": body.txn_id.strip(), "excluded": True}
 
 
@@ -127,7 +124,6 @@ def spending_exclude_txn(request: Request, body: SpendingExclusionRequest):
 def spending_include_txn(request: Request, txn_id: str):
     require_auth(request)
     include_spending_txn(txn_id)
-    invalidate_spending_cache()
     return {"ok": True, "txn_id": txn_id, "excluded": False}
 
 
@@ -136,7 +132,6 @@ def spending_set_amount_override(request: Request, body: SpendingAmountOverrideR
     require_auth(request)
     txn_id = body.txn_id.strip()
     set_spending_amount_override(txn_id, body.amount)
-    invalidate_spending_cache()
     return {"ok": True, "txn_id": txn_id, "amount": round(body.amount, 2)}
 
 
@@ -144,7 +139,6 @@ def spending_set_amount_override(request: Request, body: SpendingAmountOverrideR
 def spending_clear_amount_override(request: Request, txn_id: str):
     require_auth(request)
     clear_spending_amount_override(txn_id)
-    invalidate_spending_cache()
     return {"ok": True, "txn_id": txn_id, "amount_edited": False}
 
 
@@ -152,7 +146,6 @@ def spending_clear_amount_override(request: Request, txn_id: str):
 def splitwise_configure(request: Request, body: SplitwiseConfigureRequest):
     require_auth(request)
     set_splitwise_api_key(body.api_key.strip())
-    invalidate_spending_cache()
     if not splitwise_client.is_configured():
         raise HTTPException(status_code=400, detail="Invalid Splitwise API key")
     try:
