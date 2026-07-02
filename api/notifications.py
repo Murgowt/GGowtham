@@ -7,7 +7,7 @@ from api.auth import require_auth
 from config import settings
 from db.database import delete_push_subscription, list_push_subscriptions, save_push_subscription
 from integrations.daily_summary import send_cron_test, send_daily_summary
-from integrations.spending_alerts import check_and_send_spending_alerts
+from integrations.spending_alerts import check_and_send_spending_alerts, send_daily_budget_summary
 from integrations.webpush import is_configured, send_to_subscription
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
@@ -145,4 +145,24 @@ def cron_spending_alerts(request: Request):
         raise HTTPException(status_code=503, detail=f"Spending alerts failed: {exc}") from exc
     if result.get("skipped"):
         return {"ok": True, **result, "message": "No subscribers — enable notifications in app"}
+    return {"ok": True, **result}
+
+
+@router.post("/cron/budget-daily")
+def cron_daily_budget_summary(request: Request):
+    """9 AM budget remaining — always notifies subscribers."""
+    require_cron_secret(request)
+    if not is_configured():
+        raise HTTPException(status_code=503, detail="Push notifications not configured")
+    try:
+        result = send_daily_budget_summary()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Daily budget summary failed")
+        raise HTTPException(status_code=503, detail=f"Daily budget summary failed: {exc}") from exc
+    if result.get("skipped"):
+        return {"ok": True, **result, "message": "No subscribers — enable notifications in app"}
+    if result["sent"] == 0:
+        raise HTTPException(status_code=503, detail="Failed to send to any subscriber")
     return {"ok": True, **result}

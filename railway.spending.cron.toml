@@ -1,0 +1,8 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "python -m jobs.trigger_daily"
+restartPolicyType = "never"
+# Every hour at :00 UTC — set CRON_MODE=spending on the service
+cronSchedule = "0 * * * *"

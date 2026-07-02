@@ -182,7 +182,8 @@ Add a **third Cron** service (or reuse the test cron with a different schedule):
 | Setting | Value |
 |---------|--------|
 | Start command | `python -m jobs.trigger_daily` |
-| Cron schedule | `*/5 * * * *` (every 5 minutes) |
+| Config file | `/railway.spending.cron.toml` (in service Settings) |
+| Cron schedule | `0 * * * *` (every hour, at :00 UTC) |
 | Env vars | `APP_BASE_URL`, `CRON_SECRET`, **`CRON_MODE=spending`** |
 
 Requires notifications enabled in Settings (same VAPID keys as portfolio). The first cron run **seeds** existing transactions without notifying (no flood). Tapping a notification opens the Spend tab.
@@ -193,6 +194,31 @@ curl -X POST "https://your-app.up.railway.app/api/notifications/cron/spending" \
 ```
 
 When the app is open on the Spend tab, it also polls every 15 seconds and shows a local notification immediately.
+
+### 3c. Daily budget remaining (9 AM Central)
+
+Every morning at **9:00 AM Central**, push your **remaining budget** for the current billing period (same `· $X left` format as purchase alerts). This always sends — even if nothing new was spent.
+
+Add a **fourth Cron** service:
+
+| Setting | Value |
+|---------|--------|
+| Start command | `python -m jobs.trigger_daily` |
+| Config file | `/railway.budget-daily.cron.toml` (in service Settings) |
+| Cron schedule | `0 14 * * *` (9:00 AM Central during CDT — see below) |
+| Env vars | `APP_BASE_URL`, `CRON_SECRET`, **`CRON_MODE=budget_daily`** |
+
+**9:00 AM Central (every day):** Railway cron uses UTC. Set schedule to:
+
+| Season | Central time | UTC cron |
+|--------|----------------|----------|
+| Daylight (CDT, most of Mar–Nov) | 9:00 AM | `0 14 * * *` |
+| Standard (CST, Nov–Mar) | 9:00 AM | `0 15 * * *` |
+
+```bash
+curl -X POST "https://your-app.up.railway.app/api/notifications/cron/budget-daily" \
+  -H "X-Cron-Secret: your-cron-secret"
+```
 
 Remove any **Custom Build Command** (`npm run build`) from the cron service.
 

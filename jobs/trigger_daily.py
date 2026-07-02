@@ -5,11 +5,17 @@ Railway cron start command: python -m jobs.trigger_daily
 Env vars:
   APP_BASE_URL  — e.g. https://your-app.up.railway.app
   CRON_SECRET   — must match web app
-  CRON_MODE     — "daily" (portfolio summary) or "test" (simple ping). Default: daily
+  CRON_MODE     — "daily" (portfolio summary), "spending" (budget alerts),
+                  "budget_daily" (9 AM budget remaining), or "test" (ping). Default: daily
 
-Production schedule (12:00 PM Central daily):
-  CDT (Mar–Nov): 0 17 * * *
-  CST (Nov–Mar): 0 18 * * *
+Production schedules:
+  Portfolio (12:00 PM Central daily):
+    CDT (Mar–Nov): 0 17 * * *
+    CST (Nov–Mar): 0 18 * * *
+  Spending alerts (hourly): 0 * * * *
+  Budget remaining (9:00 AM Central daily):
+    CDT (Mar–Nov): 0 14 * * *
+    CST (Nov–Mar): 0 15 * * *
 Testing schedule (every 5 minutes): */5 * * *
 """
 
@@ -53,6 +59,7 @@ def run_trigger(*, dry_run: bool = False) -> int:
     path = (
         "cron/test" if mode == "test"
         else "cron/spending" if mode == "spending"
+        else "cron/budget-daily" if mode == "budget_daily"
         else "cron/daily"
     )
     url = f"{base_url}/api/notifications/{path}"

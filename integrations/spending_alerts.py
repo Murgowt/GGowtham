@@ -35,6 +35,13 @@ def format_spending_alert_body(txn: dict, budget_remaining: float) -> str:
     return f"{desc} {amt_str}{pending} · ${budget_remaining:,.0f} left"
 
 
+def format_daily_budget_body(summary: dict) -> str:
+    """Morning budget digest — same · $X left suffix as purchase alerts."""
+    label = (summary.get("month_label") or "Budget").strip()
+    remaining = float(summary.get("budget_remaining") or 0)
+    return f"{label} · ${remaining:,.0f} left"
+
+
 def _alertable_transactions(transactions: list[dict]) -> list[dict]:
     return [
         t for t in transactions
@@ -120,4 +127,46 @@ def check_and_send_spending_alerts(*, bootstrap_if_empty: bool = True) -> dict:
         "total": len(subs),
         "new": len(delivered_keys),
         "budget_remaining": budget_remaining,
+    }
+
+
+def send_daily_budget_summary() -> dict:
+    """Push current budget remaining — always sends when subscribers exist."""
+    if not settings.notifications_enabled or not is_configured():
+        raise RuntimeError("Push notifications are not configured")
+
+    subs = list_push_subscriptions()
+    if not subs:
+        return {"sent": 0, "total": 0, "skipped": True}
+
+    try:
+        data = get_spending(force_refresh=True)
+    except Exception:
+        logger.exception("Spending refresh failed for daily budget summary")
+        raise
+
+    summary = data.summary or {}
+    body = format_daily_budget_body(summary)
+    title = "Brain · Spend"
+    sent = 0
+    for sub in subs:
+        if send_to_subscription(
+            sub["subscription_json"],
+            title=title,
+            body=body,
+            url="/?tab=spend",
+        ):
+            sent += 1
+
+    logger.info(
+        "Daily budget summary sent to %s/%s subscribers: %s",
+        sent,
+        len(subs),
+        body,
+    )
+    return {
+        "sent": sent,
+        "total": len(subs),
+        "body": body,
+        "budget_remaining": float(summary.get("budget_remaining") or 0),
     }

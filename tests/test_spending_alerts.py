@@ -1,4 +1,8 @@
-from integrations.spending_alerts import format_spending_alert_body, spending_alert_key
+from integrations.spending_alerts import (
+    format_daily_budget_body,
+    format_spending_alert_body,
+    spending_alert_key,
+)
 
 
 def test_spending_alert_key_dedupes_pending_posted():
@@ -33,3 +37,11 @@ def test_format_spending_alert_body_pending_card():
     assert "Metro Market" in body
     assert "−$17.90" in body
     assert "pending" in body
+
+
+def test_format_daily_budget_body():
+    body = format_daily_budget_body(
+        {"month_label": "Jun 6 – Jul 5, 2026", "budget_remaining": 1745.56},
+    )
+    assert "Jun 6 – Jul 5, 2026" in body
+    assert "$1,746 left" in body
