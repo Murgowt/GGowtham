@@ -22,24 +22,51 @@ def spending_alert_key(txn: dict) -> str:
     return str(txn.get("id") or "")
 
 
-def format_spending_alert_body(txn: dict, budget_remaining: float) -> str:
-    desc = (txn.get("description") or "Expense").strip()
-    if len(desc) > 36:
-        desc = desc[:33] + "…"
-    amount = float(txn.get("amount") or 0)
-    if amount > 0:
-        amt_str = f"+${amount:,.2f}"
-    else:
-        amt_str = f"−${abs(amount):,.2f}"
-    pending = " · pending" if txn.get("pending") else ""
-    return f"{desc} {amt_str}{pending} · ${budget_remaining:,.0f} left"
+def format_budget_left_line(budget_remaining: float) -> str:
+    return f"${budget_remaining:,.0f} left"
 
 
-def format_daily_budget_body(summary: dict) -> str:
-    """Morning budget digest — same · $X left suffix as purchase alerts."""
-    label = (summary.get("month_label") or "Budget").strip()
+def spending_alert_tone(
+    *,
+    budget_used: float,
+    budget_remaining: float,
+    description: str | None = None,
+) -> str:
+    """Tone line based on how much of the monthly budget has been spent."""
+    if budget_remaining <= 0:
+        return "IDIOT STOP!!!"
+    if budget_used > 1500:
+        return "STOP!!!"
+    if budget_used > 1000:
+        return "Be careful!!"
+    desc = (description or "").strip()
+    if not desc:
+        return "Okay!!"
+    if len(desc) > 24:
+        desc = desc[:21] + "…"
+    return f"Okay {desc}!!"
+
+
+def format_spending_alert_body(txn: dict, summary: dict) -> tuple[str, str]:
+    """Return (title, body) for a new purchase alert."""
     remaining = float(summary.get("budget_remaining") or 0)
-    return f"{label} · ${remaining:,.0f} left"
+    used = float(summary.get("budget_used") or 0)
+    title = format_budget_left_line(remaining)
+    body = spending_alert_tone(
+        budget_used=used,
+        budget_remaining=remaining,
+        description=(txn.get("description") or "Expense").strip(),
+    )
+    return title, body
+
+
+def format_daily_budget_body(summary: dict) -> tuple[str, str]:
+    """Morning budget digest — same tier tone as purchase alerts."""
+    remaining = float(summary.get("budget_remaining") or 0)
+    used = float(summary.get("budget_used") or 0)
+    title = format_budget_left_line(remaining)
+    body = spending_alert_tone(budget_used=used, budget_remaining=remaining)
+    return title, body
 
 
 def _alertable_transactions(transactions: list[dict]) -> list[dict]:
@@ -101,8 +128,7 @@ def check_and_send_spending_alerts(*, bootstrap_if_empty: bool = True) -> dict:
         txn = key_to_txn.get(key)
         if not txn:
             continue
-        body = format_spending_alert_body(txn, budget_remaining)
-        title = "Brain · Spend"
+        title, body = format_spending_alert_body(txn, summary)
         for sub in subs:
             if send_to_subscription(
                 sub["subscription_json"],
@@ -146,8 +172,7 @@ def send_daily_budget_summary() -> dict:
         raise
 
     summary = data.summary or {}
-    body = format_daily_budget_body(summary)
-    title = "Brain · Spend"
+    title, body = format_daily_budget_body(summary)
     sent = 0
     for sub in subs:
         if send_to_subscription(
@@ -159,14 +184,16 @@ def send_daily_budget_summary() -> dict:
             sent += 1
 
     logger.info(
-        "Daily budget summary sent to %s/%s subscribers: %s",
+        "Daily budget summary sent to %s/%s subscribers: %s — %s",
         sent,
         len(subs),
+        title,
         body,
     )
     return {
         "sent": sent,
         "total": len(subs),
+        "title": title,
         "body": body,
         "budget_remaining": float(summary.get("budget_remaining") or 0),
     }

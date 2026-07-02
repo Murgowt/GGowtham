@@ -118,16 +118,27 @@ function formatTime(iso) {
   return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
-function formatSpendAlertBody(txn, budgetRemaining) {
-  let desc = String(txn.description || "Expense").trim();
-  if (desc.length > 36) desc = `${desc.slice(0, 33)}…`;
-  const amount = Number(txn.amount) || 0;
-  const amtStr = amount > 0
-    ? `+${formatMoney(amount)}`
-    : `−${formatMoney(Math.abs(amount))}`;
-  const pending = txn.pending ? " · pending" : "";
-  const left = formatMoney(budgetRemaining).replace(/\.00$/, "");
-  return `${desc} ${amtStr}${pending} · ${left} left`;
+function formatBudgetLeftLine(budgetRemaining) {
+  return `${formatMoney(budgetRemaining).replace(/\.00$/, "")} left`;
+}
+
+function spendingAlertTone(budgetUsed, budgetRemaining, description) {
+  if (budgetRemaining <= 0) return "IDIOT STOP!!!";
+  if (budgetUsed > 1500) return "STOP!!!";
+  if (budgetUsed > 1000) return "Be careful!!";
+  const desc = String(description || "").trim();
+  if (!desc) return "Okay!!";
+  const label = desc.length > 24 ? `${desc.slice(0, 21)}…` : desc;
+  return `Okay ${label}!!`;
+}
+
+function formatSpendAlertBody(txn, summary) {
+  const remaining = Number(summary?.budget_remaining) || 0;
+  const used = Number(summary?.budget_used) || 0;
+  return {
+    title: formatBudgetLeftLine(remaining),
+    body: spendingAlertTone(used, remaining, txn.description),
+  };
 }
 
 function spendAlertKey(txn) {
@@ -146,7 +157,7 @@ function isSpendAlertTxn(txn) {
 
 function maybeNotifyNewSpend(data) {
   if (!("Notification" in window) || Notification.permission !== "granted") return;
-  const remaining = data.summary?.budget_remaining ?? 0;
+  const summary = data.summary || {};
   const alertable = (data.transactions || []).filter(isSpendAlertTxn);
 
   if (!spendAlertBootstrapped) {
@@ -159,8 +170,9 @@ function maybeNotifyNewSpend(data) {
     const key = spendAlertKey(txn);
     if (seenSpendAlertKeys.has(key)) continue;
     seenSpendAlertKeys.add(key);
-    new Notification("Brain · Spend", {
-      body: formatSpendAlertBody(txn, remaining),
+    const alert = formatSpendAlertBody(txn, summary);
+    new Notification(alert.title, {
+      body: alert.body,
       icon: "/static/icon-192.png",
       tag: key,
     });
