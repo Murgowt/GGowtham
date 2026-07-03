@@ -272,51 +272,106 @@ def _map_plaid_transaction(txn: dict, account_lookup: dict[str, dict]) -> dict |
     }
 
 
-def _fetch_item_transactions(
+PLAID_REFRESH_MIN_INTERVAL = timedelta(minutes=15)
+
+
+def _txn_date(mapped: dict) -> date:
+    raw = mapped.get("date") or ""
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00")).date()
+    except ValueError:
+        return date.today()
+
+
+def _drop_superseded_pending(transactions: list[dict]) -> list[dict]:
+    """Remove pending rows when the posted version exists."""
+    superseded = {
+        t["pending_transaction_id"]
+        for t in transactions
+        if t.get("pending_transaction_id") and not t.get("pending")
+    }
+    if not superseded:
+        return transactions
+    return [
+        t for t in transactions
+        if not (t.get("pending") and t["id"].removeprefix("plaid:") in superseded)
+    ]
+
+
+def _request_item_refresh(access_token: str, item_id: str) -> None:
+    """Ask Plaid to pull latest transactions from the bank (rate-limited)."""
+    from db.database import get_setting, set_setting
+
+    key = f"plaid_refresh_{item_id}"
+    now = datetime.now(timezone.utc)
+    last_raw = get_setting(key)
+    if last_raw:
+        try:
+            last = datetime.fromisoformat(last_raw)
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=timezone.utc)
+            if now - last < PLAID_REFRESH_MIN_INTERVAL:
+                logger.info("Skipping Plaid refresh for %s (recent)", item_id)
+                return
+        except ValueError:
+            pass
+
+    try:
+        _post("/transactions/refresh", {"access_token": access_token})
+        set_setting(key, now.isoformat())
+        logger.info("Requested Plaid transaction refresh for %s", item_id)
+    except httpx.HTTPError:
+        logger.warning("Plaid transactions/refresh failed for %s", item_id, exc_info=True)
+
+
+def _sync_item_transactions(
     access_token: str,
     accounts: list[dict],
+    cursor: str | None,
     *,
     start: date,
     end: date,
-) -> list[dict]:
+) -> tuple[list[dict], str | None]:
+    """Use /transactions/sync — includes pending card authorizations as they arrive."""
     account_lookup = {a["account_id"]: a for a in accounts if a.get("account_id")}
+    by_id: dict[str, dict] = {}
+    current_cursor = cursor
 
-    transactions: list[dict] = []
-    offset = 0
-    count = 500
-    total = None
+    while True:
+        body: dict = {"access_token": access_token}
+        if current_cursor:
+            body["cursor"] = current_cursor
+        data = _post("/transactions/sync", body)
 
-    while total is None or offset < total:
-        data = _post(
-            "/transactions/get",
-            {
-                "access_token": access_token,
-                "start_date": start.isoformat(),
-                "end_date": end.isoformat(),
-                "options": {"count": count, "offset": offset},
-            },
-        )
-        total = data.get("total_transactions", 0)
-        for txn in data.get("transactions") or []:
+        for txn in (data.get("added") or []) + (data.get("modified") or []):
             mapped = _map_plaid_transaction(txn, account_lookup)
-            if mapped:
-                transactions.append(mapped)
-        offset += count
-        if not data.get("transactions"):
+            if not mapped:
+                continue
+            txn_day = _txn_date(mapped)
+            if start <= txn_day <= end:
+                by_id[mapped["id"]] = mapped
+
+        for removed in data.get("removed") or []:
+            txn_id = removed.get("transaction_id")
+            if txn_id:
+                by_id.pop(f"plaid:{txn_id}", None)
+
+        current_cursor = data.get("next_cursor")
+        if not data.get("has_more"):
             break
 
-    return transactions
+    return _drop_superseded_pending(list(by_id.values())), current_cursor
 
 
 def fetch_plaid_transactions(*, days: int = 30, force_refresh: bool = False) -> list[dict]:
-    del force_refresh  # refresh always fetches live from Plaid
-
     if settings.mock_integrations:
         return []
 
     if not has_connection():
         return []
 
+    start = date.today() - timedelta(days=days)
+    end = date.today()
     merged: list[dict] = []
     seen: set[str] = set()
 
@@ -338,20 +393,24 @@ def fetch_plaid_transactions(*, days: int = 30, force_refresh: bool = False) -> 
                 account.setdefault("institution_name", institution_name)
                 account.setdefault("institution_id", institution_id)
 
+        if force_refresh:
+            _request_item_refresh(item.access_token, item.item_id)
+
         try:
-            txns = _fetch_item_transactions(
+            txns, new_cursor = _sync_item_transactions(
                 item.access_token,
                 accounts,
-                start=date.today() - timedelta(days=days),
-                end=date.today(),
+                item.sync_cursor,
+                start=start,
+                end=end,
             )
         except httpx.HTTPError:
-            logger.exception("Plaid transactions/get failed for item %s", item.item_id)
+            logger.exception("Plaid transactions/sync failed for item %s", item.item_id)
             continue
 
         update_plaid_item_sync(
             item.item_id,
-            sync_cursor=item.sync_cursor,
+            sync_cursor=new_cursor,
             last_synced_at=datetime.now(timezone.utc),
             accounts_json=accounts,
         )
@@ -360,17 +419,6 @@ def fetch_plaid_transactions(*, days: int = 30, force_refresh: bool = False) -> 
             if txn["id"] not in seen:
                 seen.add(txn["id"])
                 merged.append(txn)
-
-    superseded_pending = {
-        t["pending_transaction_id"]
-        for t in merged
-        if t.get("pending_transaction_id")
-    }
-    if superseded_pending:
-        merged = [
-            t for t in merged
-            if not (t.get("pending") and t["id"].removeprefix("plaid:") in superseded_pending)
-        ]
 
     return merged
 
@@ -381,8 +429,6 @@ def fetch_plaid_transactions_between(
     end: date,
     force_refresh: bool = False,
 ) -> list[dict]:
-    del force_refresh
-
     if settings.mock_integrations or not has_connection():
         return []
 
@@ -407,27 +453,32 @@ def fetch_plaid_transactions_between(
                 account.setdefault("institution_name", institution_name)
                 account.setdefault("institution_id", institution_id)
 
+        if force_refresh:
+            _request_item_refresh(item.access_token, item.item_id)
+
         try:
-            txns = _fetch_item_transactions(item.access_token, accounts, start=start, end=end)
+            txns, new_cursor = _sync_item_transactions(
+                item.access_token,
+                accounts,
+                item.sync_cursor,
+                start=start,
+                end=end,
+            )
         except httpx.HTTPError:
-            logger.exception("Plaid transactions/get failed for item %s", item.item_id)
+            logger.exception("Plaid transactions/sync failed for item %s", item.item_id)
             continue
+
+        update_plaid_item_sync(
+            item.item_id,
+            sync_cursor=new_cursor,
+            last_synced_at=datetime.now(timezone.utc),
+            accounts_json=accounts,
+        )
 
         for txn in txns:
             if txn["id"] not in seen:
                 seen.add(txn["id"])
                 merged.append(txn)
-
-    superseded_pending = {
-        t["pending_transaction_id"]
-        for t in merged
-        if t.get("pending_transaction_id")
-    }
-    if superseded_pending:
-        merged = [
-            t for t in merged
-            if not (t.get("pending") and t["id"].removeprefix("plaid:") in superseded_pending)
-        ]
 
     return merged
 

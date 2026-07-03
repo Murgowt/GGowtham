@@ -921,12 +921,12 @@ def _mock_spending(*, days: int) -> SpendingData:
     )
 
 
-def _fetch_live(*, days: int, splitwise_txns: list[dict] | None = None) -> SpendingData:
+def _fetch_live(*, days: int, splitwise_txns: list[dict] | None = None, force_plaid_refresh: bool = False) -> SpendingData:
     now = datetime.now(timezone.utc)
     plaid_txns: list[dict] = []
 
     try:
-        plaid_txns = plaid_client.fetch_plaid_transactions(days=days, force_refresh=True)
+        plaid_txns = plaid_client.fetch_plaid_transactions(days=days, force_refresh=force_plaid_refresh)
     except Exception:
         logger.exception("Plaid fetch failed")
 
@@ -975,7 +975,7 @@ def get_spending(*, force_refresh: bool = False, days: int = 30) -> SpendingData
             source="empty",
         )
 
-    return _fetch_live(days=days, splitwise_txns=splitwise_txns)
+    return _fetch_live(days=days, splitwise_txns=splitwise_txns, force_plaid_refresh=force_refresh)
 
 # Backwards-compatible alias for any internal callers
 resolve_splitwise_overlaps = apply_spending_rules
