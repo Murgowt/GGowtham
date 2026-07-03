@@ -953,8 +953,6 @@ def get_spending_status() -> dict:
 
 
 def get_spending(*, force_refresh: bool = False, days: int = 30) -> SpendingData:
-    del force_refresh  # always fetch live
-
     if settings.mock_integrations:
         return _mock_spending(days=days)
 
@@ -975,7 +973,11 @@ def get_spending(*, force_refresh: bool = False, days: int = 30) -> SpendingData
             source="empty",
         )
 
-    return _fetch_live(days=days, splitwise_txns=splitwise_txns, force_plaid_refresh=force_refresh)
+    return _fetch_live(
+        days=days,
+        splitwise_txns=splitwise_txns,
+        force_plaid_refresh=force_refresh,
+    )
 
 # Backwards-compatible alias for any internal callers
 resolve_splitwise_overlaps = apply_spending_rules
