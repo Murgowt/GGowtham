@@ -225,7 +225,12 @@ def _map_plaid_transaction(txn: dict, account_lookup: dict[str, dict]) -> dict |
     raw_amount = float(txn.get("amount") or 0)
     amount = round(-raw_amount, 2)
 
-    date_raw = txn.get("datetime") or txn.get("date") or ""
+    date_raw = (
+        txn.get("authorized_date")
+        or txn.get("datetime")
+        or txn.get("date")
+        or ""
+    )
     if "T" in date_raw:
         dt = datetime.fromisoformat(date_raw.replace("Z", "+00:00"))
     else:
@@ -328,13 +333,14 @@ def _sync_item_transactions(
     access_token: str,
     accounts: list[dict],
     cursor: str | None,
+    cache: dict[str, dict],
     *,
     start: date,
     end: date,
-) -> tuple[list[dict], str | None]:
-    """Use /transactions/sync — includes pending card authorizations as they arrive."""
+) -> tuple[list[dict], str | None, dict[str, dict]]:
+    """Use /transactions/sync — merge into cache so incremental updates keep history."""
     account_lookup = {a["account_id"]: a for a in accounts if a.get("account_id")}
-    by_id: dict[str, dict] = {}
+    store = dict(cache)
     current_cursor = cursor
 
     while True:
@@ -345,22 +351,29 @@ def _sync_item_transactions(
 
         for txn in (data.get("added") or []) + (data.get("modified") or []):
             mapped = _map_plaid_transaction(txn, account_lookup)
-            if not mapped:
-                continue
-            txn_day = _txn_date(mapped)
-            if start <= txn_day <= end:
-                by_id[mapped["id"]] = mapped
+            if mapped:
+                store[mapped["id"]] = mapped
 
         for removed in data.get("removed") or []:
             txn_id = removed.get("transaction_id")
             if txn_id:
-                by_id.pop(f"plaid:{txn_id}", None)
+                store.pop(f"plaid:{txn_id}", None)
 
         current_cursor = data.get("next_cursor")
         if not data.get("has_more"):
             break
 
-    return _drop_superseded_pending(list(by_id.values())), current_cursor
+    prune_before = start - timedelta(days=7)
+    store = {
+        txn_id: txn
+        for txn_id, txn in store.items()
+        if _txn_date(txn) >= prune_before
+    }
+    in_window = [
+        txn for txn in store.values()
+        if start <= _txn_date(txn) <= end
+    ]
+    return _drop_superseded_pending(in_window), current_cursor, store
 
 
 def fetch_plaid_transactions(*, days: int = 30, force_refresh: bool = False) -> list[dict]:
@@ -371,7 +384,7 @@ def fetch_plaid_transactions(*, days: int = 30, force_refresh: bool = False) -> 
         return []
 
     start = date.today() - timedelta(days=days)
-    end = date.today()
+    end = date.today() + timedelta(days=1)
     merged: list[dict] = []
     seen: set[str] = set()
 
@@ -397,10 +410,12 @@ def fetch_plaid_transactions(*, days: int = 30, force_refresh: bool = False) -> 
             _request_item_refresh(item.access_token, item.item_id)
 
         try:
-            txns, new_cursor = _sync_item_transactions(
+            cache = dict(item.transactions_cache_json or {})
+            txns, new_cursor, new_cache = _sync_item_transactions(
                 item.access_token,
                 accounts,
                 item.sync_cursor,
+                cache,
                 start=start,
                 end=end,
             )
@@ -413,6 +428,7 @@ def fetch_plaid_transactions(*, days: int = 30, force_refresh: bool = False) -> 
             sync_cursor=new_cursor,
             last_synced_at=datetime.now(timezone.utc),
             accounts_json=accounts,
+            transactions_cache_json=new_cache,
         )
 
         for txn in txns:
@@ -457,10 +473,12 @@ def fetch_plaid_transactions_between(
             _request_item_refresh(item.access_token, item.item_id)
 
         try:
-            txns, new_cursor = _sync_item_transactions(
+            cache = dict(item.transactions_cache_json or {})
+            txns, new_cursor, new_cache = _sync_item_transactions(
                 item.access_token,
                 accounts,
                 item.sync_cursor,
+                cache,
                 start=start,
                 end=end,
             )
@@ -473,6 +491,7 @@ def fetch_plaid_transactions_between(
             sync_cursor=new_cursor,
             last_synced_at=datetime.now(timezone.utc),
             accounts_json=accounts,
+            transactions_cache_json=new_cache,
         )
 
         for txn in txns:

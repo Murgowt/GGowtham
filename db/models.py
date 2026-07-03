@@ -49,6 +49,7 @@ class PlaidItem(Base):
     institution_logo: Mapped[str | None] = mapped_column(Text, nullable=True)
     sync_cursor: Mapped[str | None] = mapped_column(String(500), nullable=True)
     accounts_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    transactions_cache_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False

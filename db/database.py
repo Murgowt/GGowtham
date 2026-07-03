@@ -21,6 +21,7 @@ def _migrate_schema() -> None:
     columns = [
         ("plaid_items", "institution_id", "VARCHAR(100)"),
         ("plaid_items", "institution_logo", "TEXT"),
+        ("plaid_items", "transactions_cache_json", "JSON"),
     ]
     with engine.begin() as conn:
         for table, column, col_type in columns:
@@ -183,6 +184,7 @@ def update_plaid_item_sync(
     sync_cursor: str | None,
     last_synced_at,
     accounts_json: list | None = None,
+    transactions_cache_json: dict | None = None,
 ) -> None:
     with SessionLocal() as session:
         row = session.scalar(select(PlaidItem).where(PlaidItem.item_id == item_id))
@@ -192,6 +194,8 @@ def update_plaid_item_sync(
         row.last_synced_at = last_synced_at
         if accounts_json is not None:
             row.accounts_json = accounts_json
+        if transactions_cache_json is not None:
+            row.transactions_cache_json = transactions_cache_json
         session.commit()
 
 
