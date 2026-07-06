@@ -10,7 +10,7 @@
   <link rel="manifest" href="/static/manifest.json">
   <link rel="apple-touch-icon" href="/static/icon-192.png">
   <link rel="icon" href="/static/icon-192.png" type="image/png">
-  <link rel="stylesheet" href="/static/style.css?v=3">
+  <link rel="stylesheet" href="/static/style.css?v=4">
   <title>Brain</title>
 </head>
 <body>
@@ -19,7 +19,7 @@
       <div class="login-content">
         <div class="brand-mark lg">B</div>
         <div class="logo">Brain</div>
-        <p class="subtitle">Invest · Spend · Goals</p>
+        <p class="subtitle">Invest · Budget · Goals</p>
         <form id="login-form">
           <input type="password" id="pin-input" inputmode="numeric" pattern="[0-9]*" placeholder="PIN" autocomplete="current-password" required>
           <button type="submit" class="btn primary">Unlock</button>
@@ -55,8 +55,8 @@
 
       <nav class="tab-nav" aria-label="Main">
         <button type="button" class="tab active" data-tab="invest">Invest</button>
-        <button type="button" class="tab" data-tab="spend">Spend</button>
-        <button type="button" class="tab disabled" data-tab="goals" disabled>Goals</button>
+        <button type="button" class="tab" data-tab="budget">Budget</button>
+        <button type="button" class="tab" data-tab="goals">Goals</button>
       </nav>
 
       <div class="hero-card">
@@ -104,23 +104,23 @@
       </footer>
     </section>
 
-    <section id="spending-screen" class="screen hidden">
+    <section id="budget-screen" class="screen hidden">
       <header class="header">
         <div class="brand">
           <div class="brand-mark">B</div>
           <div>
             <h1>Brain</h1>
-            <p class="subtitle">Spend</p>
+            <p class="subtitle">Budget</p>
           </div>
         </div>
         <div class="header-actions">
-          <button id="spend-refresh-btn" class="btn icon" aria-label="Refresh">
+          <button id="budget-refresh-btn" class="btn icon" aria-label="Refresh">
             <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 12a9 9 0 1 1-2.64-6.36"/>
               <polyline points="21 3 21 9 15 9"/>
             </svg>
           </button>
-          <button id="spend-settings-btn" class="btn icon" aria-label="Settings">
+          <button id="budget-settings-btn" class="btn icon" aria-label="Settings">
             <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
               <circle cx="12" cy="12" r="3"/>
@@ -131,16 +131,16 @@
 
       <nav class="tab-nav" aria-label="Main">
         <button type="button" class="tab" data-tab="invest">Invest</button>
-        <button type="button" class="tab active" data-tab="spend">Spend</button>
-        <button type="button" class="tab disabled" data-tab="goals" disabled>Goals</button>
+        <button type="button" class="tab active" data-tab="budget">Budget</button>
+        <button type="button" class="tab" data-tab="goals">Goals</button>
       </nav>
 
-      <nav class="spend-sub-nav" aria-label="Spend views">
-        <button type="button" class="spend-sub-tab active" data-spend-view="activity">Activity</button>
-        <button type="button" class="spend-sub-tab" data-spend-view="history">History</button>
+      <nav class="budget-sub-nav" aria-label="Budget views">
+        <button type="button" class="budget-sub-tab active" data-budget-view="spend">Spend</button>
+        <button type="button" class="budget-sub-tab" data-budget-view="income">Income</button>
       </nav>
 
-      <div id="spend-activity-view">
+      <div id="budget-spend-view">
       <div class="hero-card" id="spend-budget-hero">
         <span class="hero-label">Budget left</span>
         <span id="spend-budget-remaining" class="hero-value">—</span>
@@ -174,7 +174,7 @@
 
       <div id="spend-connect-banner" class="connect-banner hidden">
         <p>Connect bank, cards, or Splitwise in Settings to see your spending.</p>
-        <button id="spend-settings-shortcut" class="btn primary">Open Settings</button>
+        <button id="budget-settings-shortcut" class="btn primary">Open Settings</button>
       </div>
 
       <p id="spend-overlap-hint" class="overlap-hint hidden">Shared expenses show your share when matched to a card charge.</p>
@@ -193,42 +193,78 @@
       </footer>
       </div>
 
-      <div id="spend-history-view" class="hidden">
-        <div class="holdings-section">
-          <h2 class="section-title">Monthly overview</h2>
-          <p class="history-hint">Billing periods run from the 6th to the 5th. Select a month to load its total.</p>
-          <ul id="history-periods-list" class="holdings history-periods"></ul>
+      <div id="budget-income-view" class="hidden">
+        <div id="income-pin-gate" class="income-pin-gate">
+          <div class="brand-mark">🔒</div>
+          <p class="income-pin-hint">Income is PIN-protected. Enter your PIN to view or edit paycheck allocations.</p>
+          <form id="income-pin-form" class="income-pin-form">
+            <input type="password" id="income-pin-input" inputmode="numeric" pattern="[0-9]*" placeholder="PIN" autocomplete="off" required>
+            <button type="submit" class="btn primary">Unlock income</button>
+          </form>
+          <p id="income-pin-error" class="error hidden"></p>
+        </div>
+
+        <div id="income-content" class="hidden">
+          <p class="income-empty-hint">Describe your take-home pay and how you split each paycheck — venture/empire, living, enjoying life. Use percentages.</p>
+          <textarea id="income-textarea" class="income-textarea" placeholder="e.g. Take-home ~$8,500/month in USD. 45% to venture fund, 35% living, 20% enjoy guilt-free…"></textarea>
+          <div class="goal-editor-actions">
+            <button id="income-save-btn" class="btn primary" type="button">Save</button>
+          </div>
+          <p id="income-save-status" class="notifications-hint hidden"></p>
+          <div id="income-summary-card" class="brain-summary-card hidden">
+            <div class="brain-summary-label">Brain understands</div>
+            <p id="income-summary-text" class="brain-summary-text"></p>
+            <div id="income-allocation-chips" class="allocation-chips"></div>
+          </div>
+          <p id="income-extraction-failed" class="extraction-failed hidden">Brain couldn't parse — try adding take-home amount and % splits.</p>
         </div>
       </div>
+    </section>
 
-      <div id="spend-history-detail-view" class="hidden">
-        <button id="history-back-btn" class="btn text history-back" type="button">← Back to history</button>
-        <div class="hero-card">
-          <span class="hero-label">Total spent</span>
-          <span id="history-detail-total" class="hero-value">—</span>
-          <p id="history-detail-label" class="hero-sub">—</p>
-        </div>
-        <div class="metrics-row metrics-row-3">
-          <div class="metric">
-            <span class="metric-label">Splitwise shares</span>
-            <span id="history-detail-shares" class="metric-value">—</span>
-          </div>
-          <div class="metric-divider"></div>
-          <div class="metric">
-            <span class="metric-label">Bank (direct)</span>
-            <span id="history-detail-bank" class="metric-value">—</span>
-          </div>
-          <div class="metric-divider"></div>
-          <div class="metric">
-            <span class="metric-label">Card (direct)</span>
-            <span id="history-detail-card" class="metric-value">—</span>
+    <section id="goals-screen" class="screen hidden">
+      <header class="header">
+        <div class="brand">
+          <div class="brand-mark">B</div>
+          <div>
+            <h1>Brain</h1>
+            <p class="subtitle">Goals</p>
           </div>
         </div>
-        <p id="history-detail-excluded" class="history-excluded hidden"></p>
-        <div class="holdings-section">
-          <h2 class="section-title">Transactions</h2>
-          <ul id="history-detail-txns" class="holdings transactions"></ul>
+        <div class="header-actions">
+          <button id="goals-add-btn" class="btn icon" aria-label="Add goal">
+            <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19"/>
+              <line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+          </button>
         </div>
+      </header>
+
+      <nav class="tab-nav" aria-label="Main">
+        <button type="button" class="tab" data-tab="invest">Invest</button>
+        <button type="button" class="tab" data-tab="budget">Budget</button>
+        <button type="button" class="tab active" data-tab="goals">Goals</button>
+      </nav>
+
+      <div id="goals-list-view">
+        <p class="goal-empty">Describe what you're building — life vision and concrete milestones separately work best.</p>
+        <div id="goals-list"></div>
+      </div>
+
+      <div id="goals-editor-view" class="hidden">
+        <button id="goals-editor-back" class="btn text history-back" type="button">← Back to goals</button>
+        <p class="goal-empty">Be specific: amounts, locations, passive income targets, timelines, what you'll keep vs cut.</p>
+        <textarea id="goal-textarea" class="goal-textarea" placeholder="Describe your financial goal in detail…"></textarea>
+        <div class="goal-editor-actions">
+          <button id="goal-save-btn" class="btn primary" type="button">Save</button>
+          <button id="goal-delete-btn" class="btn secondary hidden" type="button">Delete</button>
+        </div>
+        <p id="goal-save-status" class="notifications-hint hidden"></p>
+        <div id="goal-summary-card" class="brain-summary-card hidden">
+          <div class="brain-summary-label">Brain understands</div>
+          <p id="goal-summary-text" class="brain-summary-text"></p>
+        </div>
+        <p id="goal-extraction-failed" class="extraction-failed hidden">Brain couldn't parse — try adding more detail.</p>
       </div>
     </section>
 
@@ -280,6 +316,6 @@
       <div class="spinner"></div>
     </div>
   </div>
-  <script src="/static/app.js?v=11"></script>
+  <script src="/static/app.js?v=12"></script>
 </body>
 </html>

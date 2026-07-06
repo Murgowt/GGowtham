@@ -99,3 +99,37 @@ class SpendingAlertSent(Base):
     alerted_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
+
+
+class Goal(Base):
+    """Natural-language financial goal with LLM-extracted structure."""
+
+    __tablename__ = "goals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    raw_text: Mapped[str] = mapped_column(Text, nullable=False)
+    title: Mapped[str] = mapped_column(String(200), nullable=False, default="Goal")
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    extracted_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    extraction_status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class IncomeProfile(Base):
+    """Single NL paycheck + allocation plan (PIN-gated in API)."""
+
+    __tablename__ = "income_profiles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    raw_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    extracted_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    extraction_status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
+    )

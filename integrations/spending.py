@@ -1,8 +1,9 @@
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 from config import settings
+from integrations.app_time import app_midnight, now_app, to_app_tz
 from db.database import (
     get_latest_spending_snapshot,
     get_monthly_budget,
@@ -42,7 +43,7 @@ INTERNAL_TRANSFER_DETAILED = {
 
 INVESTMENT_PERIOD_GRACE_DAYS = 7
 
-HISTORY_EPOCH = datetime(2026, 1, 6, tzinfo=timezone.utc)
+HISTORY_EPOCH = app_midnight(2026, 1, 6)
 
 CREDIT_CARD_PAYMENT_DETAILED = {
     "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT",
@@ -115,6 +116,7 @@ class SpendingData:
 
 
 def _period_bounds(now: datetime) -> tuple[datetime, datetime]:
+    now = to_app_tz(now)
     start_day = settings.spending_period_start_day
     if now.day >= start_day:
         period_start = now.replace(day=start_day, hour=0, minute=0, second=0, microsecond=0)
@@ -464,7 +466,8 @@ def _within_days(a: datetime, b: datetime, days: int) -> bool:
 
 
 def _parse_date(raw: str) -> datetime:
-    return datetime.fromisoformat(raw)
+    dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    return to_app_tz(dt)
 
 
 def _robinhood_haystack(txn: dict) -> str:
@@ -637,7 +640,7 @@ def _public_transactions(transactions: list[dict]) -> list[dict]:
 
 
 def compute_summary(transactions: list[dict], *, now: datetime | None = None) -> dict:
-    now = now or datetime.now(timezone.utc)
+    now = now or now_app()
     period_start, period_end = _period_bounds(now)
     investment_start = period_start - timedelta(days=INVESTMENT_PERIOD_GRACE_DAYS)
 
@@ -814,9 +817,7 @@ def _fetch_days(now: datetime, default_days: int) -> int:
 
 
 def _snapshot_to_spending(snapshot) -> SpendingData:
-    captured = snapshot.captured_at
-    if captured.tzinfo is None:
-        captured = captured.replace(tzinfo=timezone.utc)
+    captured = to_app_tz(snapshot.captured_at)
     transactions = snapshot.transactions_json or []
     resolved = resolve_spending_transactions(transactions)
     from db.database import get_monthly_budget, get_spending_exclusion_ids
@@ -890,7 +891,7 @@ def _build_spending(
 
 
 def _mock_spending(*, days: int) -> SpendingData:
-    now = datetime.now(timezone.utc)
+    now = now_app()
     cutoff = now - timedelta(days=days)
 
     txns = []
@@ -922,7 +923,7 @@ def _mock_spending(*, days: int) -> SpendingData:
 
 
 def _fetch_live(*, days: int, splitwise_txns: list[dict] | None = None, force_plaid_refresh: bool = False) -> SpendingData:
-    now = datetime.now(timezone.utc)
+    now = now_app()
     plaid_txns: list[dict] = []
 
     try:
@@ -956,7 +957,7 @@ def get_spending(*, force_refresh: bool = False, days: int = 30) -> SpendingData
     if settings.mock_integrations:
         return _mock_spending(days=days)
 
-    now = datetime.now(timezone.utc)
+    now = now_app()
     days = _fetch_days(now, days)
     splitwise_txns = _fetch_splitwise(days=days)
 

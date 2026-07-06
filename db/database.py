@@ -2,7 +2,7 @@ from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from config import settings
-from db.models import AppSetting, Base, PlaidItem, PortfolioSnapshot, PushSubscription, SpendingAlertSent, SpendingAmountOverride, SpendingExclusion, SpendingSnapshot
+from db.models import AppSetting, Base, Goal, IncomeProfile, PlaidItem, PortfolioSnapshot, PushSubscription, SpendingAlertSent, SpendingAmountOverride, SpendingExclusion, SpendingSnapshot
 
 connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
 engine = create_engine(settings.database_url, connect_args=connect_args)
@@ -286,3 +286,107 @@ def mark_spending_alerts_sent(keys: list[str]) -> None:
                 continue
             session.add(SpendingAlertSent(alert_key=key))
         session.commit()
+
+
+def list_goals() -> list[Goal]:
+    with SessionLocal() as session:
+        stmt = select(Goal).order_by(Goal.updated_at.desc())
+        return list(session.scalars(stmt).all())
+
+
+def get_goal(goal_id: int) -> Goal | None:
+    with SessionLocal() as session:
+        return session.get(Goal, goal_id)
+
+
+def create_goal(
+    *,
+    raw_text: str,
+    title: str,
+    summary: str | None,
+    extracted_json: str | None,
+    extraction_status: str,
+) -> Goal:
+    with SessionLocal() as session:
+        row = Goal(
+            raw_text=raw_text,
+            title=title,
+            summary=summary,
+            extracted_json=extracted_json,
+            extraction_status=extraction_status,
+        )
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        return row
+
+
+def update_goal(
+    goal_id: int,
+    *,
+    raw_text: str,
+    title: str,
+    summary: str | None,
+    extracted_json: str | None,
+    extraction_status: str,
+) -> Goal | None:
+    with SessionLocal() as session:
+        row = session.get(Goal, goal_id)
+        if not row:
+            return None
+        row.raw_text = raw_text
+        row.title = title
+        row.summary = summary
+        row.extracted_json = extracted_json
+        row.extraction_status = extraction_status
+        session.commit()
+        session.refresh(row)
+        return row
+
+
+def delete_goal(goal_id: int) -> bool:
+    with SessionLocal() as session:
+        row = session.get(Goal, goal_id)
+        if not row:
+            return False
+        session.delete(row)
+        session.commit()
+        return True
+
+
+def get_income_profile() -> IncomeProfile | None:
+    with SessionLocal() as session:
+        return session.get(IncomeProfile, 1)
+
+
+def income_profile_configured() -> bool:
+    row = get_income_profile()
+    return bool(row and row.raw_text.strip())
+
+
+def upsert_income_profile(
+    *,
+    raw_text: str,
+    summary: str | None,
+    extracted_json: str | None,
+    extraction_status: str,
+) -> IncomeProfile:
+    with SessionLocal() as session:
+        row = session.get(IncomeProfile, 1)
+        if row:
+            row.raw_text = raw_text
+            row.summary = summary
+            row.extracted_json = extracted_json
+            row.extraction_status = extraction_status
+        else:
+            row = IncomeProfile(
+                id=1,
+                raw_text=raw_text,
+                summary=summary,
+                extracted_json=extracted_json,
+                extraction_status=extraction_status,
+            )
+            session.add(row)
+        session.commit()
+        session.refresh(row)
+        return row

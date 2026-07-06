@@ -1,10 +1,12 @@
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
+
+from integrations.app_time import now_app
 
 from integrations.spending import apply_spending_rules, compute_summary
 
 
 def _dt(days_ago: int = 0) -> str:
-    return (datetime.now(timezone.utc) - timedelta(days=days_ago)).isoformat()
+    return (now_app() - timedelta(days=days_ago)).isoformat()
 
 
 def _share(**kwargs) -> dict:
@@ -156,10 +158,9 @@ def test_internal_transfer_hidden_from_spend():
 
 
 def test_credit_card_payment_excluded_from_period_spend():
-    from datetime import datetime, timezone
     from integrations.spending import compute_period_spend, iter_billing_periods, HISTORY_EPOCH
 
-    now = datetime.now(timezone.utc)
+    now = now_app()
     period_start, period_end = next(iter_billing_periods(HISTORY_EPOCH, now))
     txns = apply_spending_rules([
         _card(amount=-100.0, date=period_start.isoformat()),
@@ -181,10 +182,9 @@ def test_credit_card_payment_excluded_from_period_spend():
 
 
 def test_period_spend_splitwise_adjusts_fronted_expense():
-    from datetime import datetime, timezone
     from integrations.spending import compute_period_spend, iter_billing_periods, HISTORY_EPOCH
 
-    now = datetime.now(timezone.utc)
+    now = now_app()
     period_start, period_end = next(iter_billing_periods(HISTORY_EPOCH, now))
     txns = apply_spending_rules([
         _card(amount=-6.75, description="Metra", date=period_start.isoformat()),
@@ -203,10 +203,9 @@ def test_period_spend_splitwise_adjusts_fronted_expense():
 
 
 def test_period_spend_fronted_for_friends_deducts():
-    from datetime import datetime, timezone
     from integrations.spending import compute_period_spend, iter_billing_periods, HISTORY_EPOCH
 
-    now = datetime.now(timezone.utc)
+    now = now_app()
     period_start, period_end = next(iter_billing_periods(HISTORY_EPOCH, now))
     txns = apply_spending_rules([
         _share(
@@ -224,10 +223,9 @@ def test_period_spend_fronted_for_friends_deducts():
 
 
 def test_period_spend_rent_and_splitwise_shares():
-    from datetime import datetime, timezone
     from integrations.spending import compute_period_spend, iter_billing_periods, HISTORY_EPOCH
 
-    now = datetime.now(timezone.utc)
+    now = now_app()
     period_start, period_end = next(iter_billing_periods(HISTORY_EPOCH, now))
     txns = apply_spending_rules([
         {
@@ -254,10 +252,9 @@ def test_period_spend_rent_and_splitwise_shares():
 
 
 def test_period_spend_apartment_rent_only_counts_your_share():
-    from datetime import datetime, timezone
     from integrations.spending import compute_period_spend, iter_billing_periods, HISTORY_EPOCH
 
-    now = datetime.now(timezone.utc)
+    now = now_app()
     period_start, period_end = next(iter_billing_periods(HISTORY_EPOCH, now))
     txns = apply_spending_rules([
         {
@@ -300,10 +297,9 @@ def test_period_spend_apartment_rent_only_counts_your_share():
 
 
 def test_period_spend_user_exclusion():
-    from datetime import datetime, timezone
     from integrations.spending import compute_period_spend, iter_billing_periods, HISTORY_EPOCH
 
-    now = datetime.now(timezone.utc)
+    now = now_app()
     period_start, period_end = next(iter_billing_periods(HISTORY_EPOCH, now))
     txns = apply_spending_rules([
         _card(amount=-100.0, date=period_start.isoformat()),
@@ -325,10 +321,9 @@ def test_period_spend_user_exclusion():
 
 
 def test_budget_status_card_and_splitwise():
-    from datetime import datetime, timezone
     from integrations.spending import apply_spending_rules, compute_budget_status, iter_billing_periods, HISTORY_EPOCH
 
-    now = datetime.now(timezone.utc)
+    now = now_app()
     period_start, period_end = next(iter_billing_periods(HISTORY_EPOCH, now))
     txns = apply_spending_rules([
         _card(amount=-200.0, date=period_start.isoformat()),
@@ -347,13 +342,12 @@ def test_budget_status_card_and_splitwise():
     assert status["budget_used"] == 50.0
     assert status["budget_remaining"] == 2150.0
 
-    # $1800 left → $200 card → $1600 → +$150 splitwise → $1750
-    status2 = compute_budget_status(txns, period_start, period_end, 1800.0 + 50.0)
+    # $1800 budget − $50 used (card $200 − splitwise +$150) → $1750 left
+    status2 = compute_budget_status(txns, period_start, period_end, 1800.0)
     assert status2["budget_remaining"] == 1750.0
 
 
 def test_budget_splitwise_net_includes_all_splits():
-    from datetime import datetime, timezone
     from integrations.spending import (
         apply_spending_rules,
         compute_budget_status,
@@ -363,7 +357,7 @@ def test_budget_splitwise_net_includes_all_splits():
         _public_transactions,
     )
 
-    now = datetime.now(timezone.utc)
+    now = now_app()
     period_start, period_end = next(iter_billing_periods(HISTORY_EPOCH, now))
     txns = apply_spending_rules([
         _card(amount=-200.0, date=period_start.isoformat()),
@@ -394,10 +388,9 @@ def test_budget_splitwise_net_includes_all_splits():
 
 
 def test_budget_status_user_exclusion():
-    from datetime import datetime, timezone
     from integrations.spending import apply_spending_rules, compute_budget_status, iter_billing_periods, HISTORY_EPOCH
 
-    now = datetime.now(timezone.utc)
+    now = now_app()
     period_start, period_end = next(iter_billing_periods(HISTORY_EPOCH, now))
     txns = apply_spending_rules([
         _card(amount=-100.0, date=period_start.isoformat()),
@@ -423,10 +416,9 @@ def test_budget_status_user_exclusion():
 
 
 def test_budget_excludes_settle_balances():
-    from datetime import datetime, timezone
     from integrations.spending import apply_spending_rules, compute_budget_status, iter_billing_periods, HISTORY_EPOCH
 
-    now = datetime.now(timezone.utc)
+    now = now_app()
     period_start, period_end = next(iter_billing_periods(HISTORY_EPOCH, now))
     txns = apply_spending_rules([
         _card(amount=-200.0, date=period_start.isoformat()),
@@ -455,7 +447,6 @@ def test_budget_excludes_settle_balances():
 
 
 def test_budget_amount_override():
-    from datetime import datetime, timezone
     from integrations.spending import (
         apply_amount_overrides,
         apply_spending_rules,
@@ -464,7 +455,7 @@ def test_budget_amount_override():
         HISTORY_EPOCH,
     )
 
-    now = datetime.now(timezone.utc)
+    now = now_app()
     period_start, period_end = next(iter_billing_periods(HISTORY_EPOCH, now))
     txns = apply_spending_rules([
         _card(amount=-200.0, date=period_start.isoformat()),

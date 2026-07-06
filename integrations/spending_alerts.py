@@ -134,7 +134,7 @@ def check_and_send_spending_alerts(*, bootstrap_if_empty: bool = True) -> dict:
                 sub["subscription_json"],
                 title=title,
                 body=body,
-                url="/?tab=spend",
+                url="/?tab=budget",
             ):
                 sent_total += 1
         delivered_keys.append(key)
@@ -179,7 +179,7 @@ def send_daily_budget_summary() -> dict:
             sub["subscription_json"],
             title=title,
             body=body,
-            url="/?tab=spend",
+            url="/?tab=budget",
         ):
             sent += 1
 

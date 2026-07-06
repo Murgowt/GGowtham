@@ -50,6 +50,8 @@ class Settings(BaseSettings):
 
     cron_secret: str = ""
 
+    app_timezone: str = "America/Chicago"
+
     spending_period_start_day: int = 6
 
     plaid_client_id: str = ""
@@ -57,6 +59,10 @@ class Settings(BaseSettings):
     plaid_env: str = "sandbox"
 
     splitwise_api_key: str = ""
+
+    openai_api_key: str = ""
+    llm_enabled: bool = True
+    llm_model: str = "gpt-4o-mini"
 
     @model_validator(mode="after")
     def configure_runtime(self) -> "Settings":

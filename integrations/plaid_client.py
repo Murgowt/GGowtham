@@ -1,5 +1,5 @@
 import logging
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 
 import httpx
 
@@ -10,7 +10,7 @@ from db.database import (
     save_plaid_item,
     update_plaid_item_sync,
 )
-
+from integrations.app_time import now_app, to_app_tz
 from integrations.medium import resolve_medium
 
 logger = logging.getLogger(__name__)
@@ -175,7 +175,7 @@ def connect_item(public_token: str) -> dict:
     update_plaid_item_sync(
         item_id,
         sync_cursor=None,
-        last_synced_at=datetime.now(timezone.utc),
+        last_synced_at=now_app(),
         accounts_json=accounts,
     )
     return {
@@ -308,13 +308,11 @@ def _request_item_refresh(access_token: str, item_id: str) -> None:
     from db.database import get_setting, set_setting
 
     key = f"plaid_refresh_{item_id}"
-    now = datetime.now(timezone.utc)
+    now = now_app()
     last_raw = get_setting(key)
     if last_raw:
         try:
-            last = datetime.fromisoformat(last_raw)
-            if last.tzinfo is None:
-                last = last.replace(tzinfo=timezone.utc)
+            last = to_app_tz(datetime.fromisoformat(last_raw))
             if now - last < PLAID_REFRESH_MIN_INTERVAL:
                 logger.info("Skipping Plaid refresh for %s (recent)", item_id)
                 return
@@ -426,7 +424,7 @@ def fetch_plaid_transactions(*, days: int = 30, force_refresh: bool = False) -> 
         update_plaid_item_sync(
             item.item_id,
             sync_cursor=new_cursor,
-            last_synced_at=datetime.now(timezone.utc),
+            last_synced_at=now_app(),
             accounts_json=accounts,
             transactions_cache_json=new_cache,
         )
@@ -489,7 +487,7 @@ def fetch_plaid_transactions_between(
         update_plaid_item_sync(
             item.item_id,
             sync_cursor=new_cursor,
-            last_synced_at=datetime.now(timezone.utc),
+            last_synced_at=now_app(),
             accounts_json=accounts,
             transactions_cache_json=new_cache,
         )

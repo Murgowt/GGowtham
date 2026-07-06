@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 
-from config import settings
+from integrations.app_time import app_midnight, now_app
 from db.database import get_spending_exclusion_ids
 from integrations import plaid_client, splitwise_client
 from integrations.spending import (
@@ -24,7 +24,7 @@ def _period_key(period_start: datetime) -> str:
 
 def _resolve_period(period_key: str, now: datetime) -> tuple[datetime, datetime] | None:
     try:
-        requested = datetime.fromisoformat(f"{period_key}T00:00:00+00:00")
+        requested = app_midnight(*map(int, period_key.split("-")))
     except ValueError:
         return None
 
@@ -97,7 +97,7 @@ def _public_period_txn(txn: dict) -> dict:
 
 def get_spending_history(*, now: datetime | None = None) -> dict:
     """Return billing period labels only — no transaction fetch or totals."""
-    now = now or datetime.now(timezone.utc)
+    now = now or now_app()
     periods = []
 
     for period_start, period_end in iter_billing_periods(HISTORY_EPOCH, now):
@@ -120,7 +120,7 @@ def get_spending_history(*, now: datetime | None = None) -> dict:
 
 
 def get_spending_history_period(period_key: str, *, now: datetime | None = None) -> dict | None:
-    now = now or datetime.now(timezone.utc)
+    now = now or now_app()
     matched = _resolve_period(period_key, now)
     if not matched:
         return None

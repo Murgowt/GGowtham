@@ -53,3 +53,11 @@ def is_authenticated(request: Request) -> bool:
 def require_auth(request: Request) -> None:
     if not is_authenticated(request):
         raise HTTPException(status_code=401, detail="Not authenticated")
+
+
+def require_income_pin(pin: str | None) -> None:
+    """Extra PIN gate for income data (salary, allocations)."""
+    if not pin:
+        raise HTTPException(status_code=401, detail="PIN required for income")
+    if not verify_pin(pin):
+        raise HTTPException(status_code=403, detail="Invalid PIN")

@@ -1,19 +1,20 @@
 const loginScreen = document.getElementById("login-screen");
 const portfolioScreen = document.getElementById("portfolio-screen");
-const spendingScreen = document.getElementById("spending-screen");
+const budgetScreen = document.getElementById("budget-screen");
+const goalsScreen = document.getElementById("goals-screen");
 const settingsScreen = document.getElementById("settings-screen");
 const loginForm = document.getElementById("login-form");
 const pinInput = document.getElementById("pin-input");
 const loginError = document.getElementById("login-error");
 const refreshBtn = document.getElementById("refresh-btn");
 const settingsBtn = document.getElementById("settings-btn");
-const spendRefreshBtn = document.getElementById("spend-refresh-btn");
-const spendSettingsBtn = document.getElementById("spend-settings-btn");
+const budgetRefreshBtn = document.getElementById("budget-refresh-btn");
+const budgetSettingsBtn = document.getElementById("budget-settings-btn");
 const settingsBackBtn = document.getElementById("settings-back-btn");
 const connectBtn = document.getElementById("connect-btn");
 const connectBanner = document.getElementById("connect-banner");
 const spendConnectBanner = document.getElementById("spend-connect-banner");
-const spendSettingsShortcut = document.getElementById("spend-settings-shortcut");
+const budgetSettingsShortcut = document.getElementById("budget-settings-shortcut");
 const spendOverlapHint = document.getElementById("spend-overlap-hint");
 const notificationsPanel = document.getElementById("notifications-panel");
 const notificationsUnavailable = document.getElementById("notifications-unavailable");
@@ -56,22 +57,38 @@ const saveBudgetBtn = document.getElementById("save-budget-btn");
 const spendStatusEl = document.getElementById("spend-status");
 const spendStatusTextEl = document.getElementById("spend-status-text");
 const spendUpdatedAtEl = document.getElementById("spend-updated-at");
-const spendActivityView = document.getElementById("spend-activity-view");
-const spendHistoryView = document.getElementById("spend-history-view");
-const spendHistoryDetailView = document.getElementById("spend-history-detail-view");
-const historyPeriodsList = document.getElementById("history-periods-list");
-const historyBackBtn = document.getElementById("history-back-btn");
-const historyDetailTotalEl = document.getElementById("history-detail-total");
-const historyDetailLabelEl = document.getElementById("history-detail-label");
-const historyDetailCardEl = document.getElementById("history-detail-card");
-const historyDetailBankEl = document.getElementById("history-detail-bank");
-const historyDetailSharesEl = document.getElementById("history-detail-shares");
-const historyDetailExcludedEl = document.getElementById("history-detail-excluded");
-const historyDetailTxnsList = document.getElementById("history-detail-txns");
+const budgetSpendView = document.getElementById("budget-spend-view");
+const budgetIncomeView = document.getElementById("budget-income-view");
+const incomePinGate = document.getElementById("income-pin-gate");
+const incomePinForm = document.getElementById("income-pin-form");
+const incomePinInput = document.getElementById("income-pin-input");
+const incomePinError = document.getElementById("income-pin-error");
+const incomeContent = document.getElementById("income-content");
+const incomeTextarea = document.getElementById("income-textarea");
+const incomeSaveBtn = document.getElementById("income-save-btn");
+const incomeSaveStatus = document.getElementById("income-save-status");
+const incomeSummaryCard = document.getElementById("income-summary-card");
+const incomeSummaryText = document.getElementById("income-summary-text");
+const incomeAllocationChips = document.getElementById("income-allocation-chips");
+const incomeExtractionFailed = document.getElementById("income-extraction-failed");
+const goalsListView = document.getElementById("goals-list-view");
+const goalsEditorView = document.getElementById("goals-editor-view");
+const goalsListEl = document.getElementById("goals-list");
+const goalsAddBtn = document.getElementById("goals-add-btn");
+const goalsEditorBack = document.getElementById("goals-editor-back");
+const goalTextarea = document.getElementById("goal-textarea");
+const goalSaveBtn = document.getElementById("goal-save-btn");
+const goalDeleteBtn = document.getElementById("goal-delete-btn");
+const goalSaveStatus = document.getElementById("goal-save-status");
+const goalSummaryCard = document.getElementById("goal-summary-card");
+const goalSummaryText = document.getElementById("goal-summary-text");
+const goalExtractionFailed = document.getElementById("goal-extraction-failed");
 
 let activeTab = "invest";
-let spendView = "activity";
-let historyPeriodKey = null;
+let budgetView = "spend";
+let incomeUnlocked = false;
+let incomeSessionPin = "";
+let editingGoalId = null;
 let settingsReturnTab = "invest";
 let plaidScriptPromise = null;
 let spendPollTimer = null;
@@ -89,7 +106,7 @@ function setText(el, value) {
 function setLoading(on) {
   on ? show(loading) : hide(loading);
   refreshBtn.classList.toggle("refreshing", on && activeTab === "invest");
-  spendRefreshBtn.classList.toggle("refreshing", on && activeTab === "spend");
+  budgetRefreshBtn?.classList.toggle("refreshing", on && activeTab === "budget");
 }
 
 function formatMoney(n) {
@@ -113,9 +130,15 @@ function formatPnl(n, pct) {
   return `<span class="${cls}">${sign}${formatMoney(n)} · ${formatPct(pct)}</span>`;
 }
 
+const APP_TIMEZONE = "America/Chicago";
+
 function formatTime(iso) {
   const d = new Date(iso);
-  return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  return d.toLocaleString("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: APP_TIMEZONE,
+  });
 }
 
 function formatBudgetLeftLine(budgetRemaining) {
@@ -181,7 +204,11 @@ function maybeNotifyNewSpend(data) {
 
 function formatShortDate(iso) {
   const d = new Date(iso);
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: APP_TIMEZONE,
+  });
 }
 
 function formatTxnAmount(amount) {
@@ -327,16 +354,256 @@ function renderExpenseRows(transactions, logos = {}) {
   }).join("");
 }
 
-function renderHistoryTransactionRows(transactions, logos = {}) {
-  return renderExpenseRows(transactions, logos);
-}
-
 function escapeHtml(text) {
   return String(text ?? "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function setBudgetView(view) {
+  budgetView = view;
+  if (view === "income") {
+    incomeUnlocked = false;
+    incomeSessionPin = "";
+    lockIncomeView();
+  }
+  document.querySelectorAll(".budget-sub-tab").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.budgetView === view);
+  });
+  if (view === "spend") {
+    show(budgetSpendView);
+    hide(budgetIncomeView);
+    loadSpending(true, { silent: true });
+  } else {
+    hide(budgetSpendView);
+    show(budgetIncomeView);
+  }
+}
+
+function lockIncomeView() {
+  show(incomePinGate);
+  hide(incomeContent);
+  if (incomePinInput) incomePinInput.value = "";
+  hide(incomePinError);
+}
+
+function renderIncomeProfile(data) {
+  if (incomeTextarea) incomeTextarea.value = data.raw_text || "";
+  if (data.summary) {
+    setText(incomeSummaryText, data.summary);
+    show(incomeSummaryCard);
+    hide(incomeExtractionFailed);
+  } else if (data.extraction_status === "failed") {
+    hide(incomeSummaryCard);
+    show(incomeExtractionFailed);
+  } else {
+    hide(incomeSummaryCard);
+    hide(incomeExtractionFailed);
+  }
+  const allocations = data.allocations || [];
+  if (incomeAllocationChips) {
+    incomeAllocationChips.innerHTML = allocations.map((a) => {
+      const label = String(a.label || "bucket").replace(/_/g, " ");
+      const pct = Number(a.pct) || 0;
+      return `<span class="allocation-chip">${escapeHtml(label)} ${pct}%</span>`;
+    }).join("");
+  }
+}
+
+async function unlockIncome(pin) {
+  hide(incomePinError);
+  setLoading(true);
+  try {
+    const data = await api("/api/budget/income/unlock", {
+      method: "POST",
+      body: JSON.stringify({ pin }),
+    });
+    incomeUnlocked = true;
+    incomeSessionPin = pin;
+    hide(incomePinGate);
+    show(incomeContent);
+    if (data.configured === false) {
+      if (incomeTextarea) incomeTextarea.value = "";
+      hide(incomeSummaryCard);
+      hide(incomeExtractionFailed);
+      if (incomeAllocationChips) incomeAllocationChips.innerHTML = "";
+    } else {
+      renderIncomeProfile(data);
+    }
+  } catch (err) {
+    show(incomePinError);
+    incomePinError.textContent = err.message;
+    incomeUnlocked = false;
+    incomeSessionPin = "";
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function saveIncome() {
+  if (!incomeSessionPin) {
+    alert("Unlock income with your PIN first.");
+    return;
+  }
+  const text = incomeTextarea?.value?.trim();
+  if (!text) {
+    incomeSaveStatus.textContent = "Enter your paycheck and allocation plan.";
+    show(incomeSaveStatus);
+    return;
+  }
+  setLoading(true);
+  hide(incomeSaveStatus);
+  try {
+    incomeSaveBtn.disabled = true;
+    incomeSaveBtn.textContent = "Brain is reading…";
+    const data = await api("/api/budget/income", {
+      method: "PUT",
+      body: JSON.stringify({ text, pin: incomeSessionPin }),
+    });
+    renderIncomeProfile(data);
+    incomeSaveStatus.textContent = "Saved.";
+    show(incomeSaveStatus);
+  } catch (err) {
+    incomeSaveStatus.textContent = err.message;
+    show(incomeSaveStatus);
+  } finally {
+    incomeSaveBtn.disabled = false;
+    incomeSaveBtn.textContent = "Save";
+    setLoading(false);
+  }
+}
+
+function renderGoalsList(goals) {
+  if (!goalsListEl) return;
+  if (!goals.length) {
+    goalsListEl.innerHTML = "";
+    return;
+  }
+  goalsListEl.innerHTML = goals.map((g) => `
+    <div class="goal-card" data-goal-id="${g.id}">
+      <div class="goal-card-title">${escapeHtml(g.title)}</div>
+      <div class="goal-card-summary">${escapeHtml(g.summary || "Brain is still reading this goal.")}</div>
+      <div class="goal-card-meta">Updated ${g.updated_at ? formatTime(g.updated_at) : "—"}</div>
+      <div class="goal-card-actions">
+        <button type="button" class="btn secondary goal-edit-btn" data-goal-id="${g.id}">Edit</button>
+      </div>
+    </div>
+  `).join("");
+  goalsListEl.querySelectorAll(".goal-card").forEach((card) => {
+    card.addEventListener("click", (e) => {
+      if (e.target.closest(".goal-edit-btn")) return;
+      openGoalEditor(Number(card.dataset.goalId));
+    });
+  });
+  goalsListEl.querySelectorAll(".goal-edit-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openGoalEditor(Number(btn.dataset.goalId));
+    });
+  });
+}
+
+function showGoalsList() {
+  show(goalsListView);
+  hide(goalsEditorView);
+  editingGoalId = null;
+}
+
+function showGoalEditor() {
+  hide(goalsListView);
+  show(goalsEditorView);
+}
+
+async function openGoalEditor(goalId = null) {
+  editingGoalId = goalId;
+  hide(goalSaveStatus);
+  hide(goalSummaryCard);
+  hide(goalExtractionFailed);
+  if (goalId) {
+    show(goalDeleteBtn);
+    setLoading(true);
+    try {
+      const data = await api(`/api/goals/${goalId}`);
+      goalTextarea.value = data.raw_text || "";
+      if (data.summary) {
+        setText(goalSummaryText, data.summary);
+        show(goalSummaryCard);
+      }
+    } catch (err) {
+      alert(err.message);
+      return;
+    } finally {
+      setLoading(false);
+    }
+  } else {
+    hide(goalDeleteBtn);
+    goalTextarea.value = "";
+  }
+  showGoalEditor();
+}
+
+async function saveGoal() {
+  const text = goalTextarea?.value?.trim();
+  if (!text) {
+    goalSaveStatus.textContent = "Enter your goal.";
+    show(goalSaveStatus);
+    return;
+  }
+  setLoading(true);
+  hide(goalSaveStatus);
+  try {
+    goalSaveBtn.disabled = true;
+    goalSaveBtn.textContent = "Brain is reading…";
+    const data = editingGoalId
+      ? await api(`/api/goals/${editingGoalId}`, { method: "PUT", body: JSON.stringify({ text }) })
+      : await api("/api/goals", { method: "POST", body: JSON.stringify({ text }) });
+    if (data.summary) {
+      setText(goalSummaryText, data.summary);
+      show(goalSummaryCard);
+      hide(goalExtractionFailed);
+    } else if (data.extraction_status === "failed") {
+      hide(goalSummaryCard);
+      show(goalExtractionFailed);
+    }
+    goalSaveStatus.textContent = "Saved.";
+    show(goalSaveStatus);
+    editingGoalId = data.id;
+    show(goalDeleteBtn);
+    await loadGoals();
+  } catch (err) {
+    goalSaveStatus.textContent = err.message;
+    show(goalSaveStatus);
+  } finally {
+    goalSaveBtn.disabled = false;
+    goalSaveBtn.textContent = "Save";
+    setLoading(false);
+  }
+}
+
+async function deleteGoal() {
+  if (!editingGoalId) return;
+  if (!window.confirm("Delete this goal?")) return;
+  setLoading(true);
+  try {
+    await api(`/api/goals/${editingGoalId}`, { method: "DELETE" });
+    showGoalsList();
+    await loadGoals();
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function loadGoals() {
+  try {
+    const data = await api("/api/goals");
+    renderGoalsList(data.goals || []);
+  } catch (err) {
+    if (goalsListEl) goalsListEl.innerHTML = `<p class="goal-empty">${escapeHtml(err.message)}</p>`;
+  }
 }
 
 async function toggleExpenseExclusion(txnId, including) {
@@ -377,10 +644,7 @@ async function editExpenseAmount(txnId, currentAmount, description) {
 }
 
 async function refreshSpendingAfterTxnChange() {
-  if (historyPeriodKey && spendView === "history-detail") {
-    await openHistoryPeriod(historyPeriodKey);
-  }
-  if (activeTab === "spend") {
+  if (activeTab === "budget" && budgetView === "spend") {
     await loadSpending(false, { silent: true });
   }
 }
@@ -411,113 +675,6 @@ function bindExpenseTxnButtons(container) {
       }
     });
   });
-}
-
-function bindHistoryTxnButtons() {
-  bindExpenseTxnButtons(historyDetailTxnsList);
-}
-
-function setSpendView(view) {
-  spendView = view;
-  document.querySelectorAll(".spend-sub-tab").forEach((btn) => {
-    btn.classList.toggle("active", btn.dataset.spendView === view);
-  });
-  const showActivity = view === "activity";
-  const showHistory = view === "history";
-  const showDetail = view === "history-detail";
-  showActivity ? show(spendActivityView) : hide(spendActivityView);
-  showHistory ? show(spendHistoryView) : hide(spendHistoryView);
-  showDetail ? show(spendHistoryDetailView) : hide(spendHistoryDetailView);
-  if (showHistory) loadSpendingHistory();
-}
-
-function renderHistoryList(data) {
-  const periods = data.periods || [];
-  if (!periods.length) {
-    historyPeriodsList.innerHTML = "";
-    return;
-  }
-
-  let html = "";
-  let lastYear = null;
-  for (const p of periods) {
-    const year = p.label.split(", ").pop();
-    if (year !== lastYear) {
-      html += `<li class="history-year">${year}</li>`;
-      lastYear = year;
-    }
-    const currentBadge = p.is_current ? '<span class="history-current-badge">Current</span>' : "";
-    html += `
-    <li class="holding history-period-row" data-period-key="${p.key}">
-      <div class="holding-info">
-        <div class="ticker">${p.label}</div>
-        <div class="holding-meta">${currentBadge}</div>
-      </div>
-    </li>`;
-  }
-  historyPeriodsList.innerHTML = html;
-  historyPeriodsList.querySelectorAll(".history-period-row").forEach((row) => {
-    row.addEventListener("click", () => openHistoryPeriod(row.dataset.periodKey));
-  });
-}
-
-function renderHistoryDetail(data) {
-  const spend = data.spend || {};
-  historyDetailTotalEl.textContent = formatMoney(spend.total_spend || 0);
-  historyDetailLabelEl.textContent = data.label || "";
-  historyDetailSharesEl.textContent = formatMoney(
-    spend.splitwise_consumption ?? spend.splitwise_your_shares ?? 0,
-  );
-  historyDetailBankEl.textContent = formatMoney(spend.bank_spend || 0);
-  historyDetailCardEl.textContent = formatMoney(spend.card_spend || 0);
-
-  const parts = [];
-  if (spend.plaid_matched_to_splitwise > 0) {
-    parts.push(`${formatMoney(spend.plaid_matched_to_splitwise)} in bank/card charges linked to Splitwise (not double-counted).`);
-  }
-  if (spend.excluded_cc_payments > 0) {
-    parts.push(`${formatMoney(spend.excluded_cc_payments)} in credit card bill payments excluded.`);
-  }
-  const userExcluded = (data.transactions || []).filter((t) => t.excluded_from_total).length;
-  if (userExcluded > 0) {
-    parts.push(`${userExcluded} expense${userExcluded === 1 ? "" : "s"} manually excluded from this total.`);
-  }
-  if (parts.length) {
-    historyDetailExcludedEl.textContent = parts.join(" ");
-    show(historyDetailExcludedEl);
-  } else {
-    hide(historyDetailExcludedEl);
-  }
-
-  historyDetailTxnsList.innerHTML = renderHistoryTransactionRows(data.transactions || [], data.logos || {});
-  bindHistoryTxnButtons();
-}
-
-async function loadSpendingHistory() {
-  try {
-    const data = await api("/api/spending/history");
-    renderHistoryList(data);
-  } catch (err) {
-    historyPeriodsList.innerHTML = `<li class="history-empty">${err.message}</li>`;
-  }
-}
-
-async function openHistoryPeriod(periodKey) {
-  historyPeriodKey = periodKey;
-  setLoading(true);
-  try {
-    const data = await api(`/api/spending/history/${periodKey}`);
-    renderHistoryDetail(data);
-    spendView = "history-detail";
-    hide(spendActivityView);
-    hide(spendHistoryView);
-    show(spendHistoryDetailView);
-  } catch (err) {
-    historyPeriodsList.innerHTML = `<li class="history-empty">${err.message}</li>`;
-    setSpendView("history");
-  } finally {
-    setLoading(false);
-  }
 }
 
 function isStandalone() {
@@ -565,7 +722,7 @@ function setActiveTab(tab) {
 function startSpendPolling() {
   stopSpendPolling();
   spendPollTimer = setInterval(() => {
-    if (activeTab === "spend") loadSpending(true, { silent: true });
+    if (activeTab === "budget" && budgetView === "spend") loadSpending(true, { silent: true });
   }, SPEND_POLL_MS);
 }
 
@@ -579,34 +736,50 @@ function stopSpendPolling() {
 function showInvest() {
   stopSpendPolling();
   hide(settingsScreen);
-  hide(spendingScreen);
+  hide(budgetScreen);
+  hide(goalsScreen);
   show(portfolioScreen);
   setActiveTab("invest");
 }
 
-function showSpend() {
+function showBudget() {
   hide(settingsScreen);
   hide(portfolioScreen);
-  show(spendingScreen);
-  setActiveTab("spend");
-  setSpendView("activity");
+  hide(goalsScreen);
+  show(budgetScreen);
+  setActiveTab("budget");
+  setBudgetView(budgetView === "income" ? "income" : "spend");
   startSpendPolling();
+}
+
+function showGoals() {
+  stopSpendPolling();
+  hide(settingsScreen);
+  hide(portfolioScreen);
+  hide(budgetScreen);
+  show(goalsScreen);
+  setActiveTab("goals");
+  showGoalsList();
+  loadGoals();
 }
 
 function showSettings(fromTab = activeTab) {
   stopSpendPolling();
   settingsReturnTab = fromTab;
   hide(portfolioScreen);
-  hide(spendingScreen);
+  hide(budgetScreen);
+  hide(goalsScreen);
   show(settingsScreen);
   loadNotificationsSettings();
   loadSpendingSettings();
 }
 
 function showMainFromSettings() {
-  if (settingsReturnTab === "spend") {
-    showSpend();
+  if (settingsReturnTab === "budget") {
+    showBudget();
     loadSpending(true);
+  } else if (settingsReturnTab === "goals") {
+    showGoals();
   } else {
     showInvest();
   }
@@ -1003,7 +1176,7 @@ async function connectPlaid() {
           spendingSettingsHint.textContent = "Bank and cards connected.";
           show(spendingSettingsHint);
           await loadSpendingSettings();
-          if (activeTab === "spend") await loadSpending(true);
+          if (activeTab === "budget") await loadSpending(true);
         } catch (err) {
           spendingSettingsHint.textContent = err.message;
           show(spendingSettingsHint);
@@ -1045,7 +1218,7 @@ async function saveMonthlyBudget() {
     spendingSettingsHint.textContent = "Budget saved.";
     show(spendingSettingsHint);
     await loadSpendingSettings();
-    if (activeTab === "spend") await loadSpending(true);
+    if (activeTab === "budget") await loadSpending(true);
   } catch (err) {
     spendingSettingsHint.textContent = err.message;
     show(spendingSettingsHint);
@@ -1073,7 +1246,7 @@ async function saveSplitwiseKey() {
     spendingSettingsHint.textContent = "Splitwise connected.";
     show(spendingSettingsHint);
     await loadSpendingSettings();
-    if (activeTab === "spend") await loadSpending(true);
+    if (activeTab === "budget") await loadSpending(true);
   } catch (err) {
     spendingSettingsHint.textContent = err.message;
     show(spendingSettingsHint);
@@ -1094,9 +1267,11 @@ async function checkAuth() {
         window.history.replaceState({}, "", "/");
       }
       await registerServiceWorker();
-      if (openTab === "spend") {
-        showSpend();
+      if (openTab === "spend" || openTab === "budget") {
+        showBudget();
         await loadSpending(true);
+      } else if (openTab === "goals") {
+        showGoals();
       } else {
         showInvest();
         await loadPortfolio(true);
@@ -1104,13 +1279,15 @@ async function checkAuth() {
     } else {
       show(loginScreen);
       hide(portfolioScreen);
-      hide(spendingScreen);
+      hide(budgetScreen);
+      hide(goalsScreen);
       hide(settingsScreen);
     }
   } catch {
     show(loginScreen);
     hide(portfolioScreen);
-    hide(spendingScreen);
+    hide(budgetScreen);
+    hide(goalsScreen);
   } finally {
     setLoading(false);
   }
@@ -1122,9 +1299,11 @@ document.querySelectorAll(".tab-nav .tab:not(.disabled)").forEach((btn) => {
     if (tab === "invest") {
       showInvest();
       await loadPortfolio();
-    } else if (tab === "spend") {
-      showSpend();
-      await loadSpending(true);
+    } else if (tab === "budget") {
+      showBudget();
+      if (budgetView === "spend") await loadSpending(true);
+    } else if (tab === "goals") {
+      showGoals();
     }
   });
 });
@@ -1149,15 +1328,12 @@ loginForm.addEventListener("submit", async (e) => {
 });
 
 refreshBtn.addEventListener("click", () => loadPortfolio(true));
-spendRefreshBtn.addEventListener("click", () => {
-  if (spendView === "history") loadSpendingHistory();
-  else if (spendView === "history-detail" && historyPeriodKey) {
-    openHistoryPeriod(historyPeriodKey);
-  } else loadSpending(true);
+budgetRefreshBtn?.addEventListener("click", () => {
+  if (budgetView === "spend") loadSpending(true);
 });
 settingsBtn.addEventListener("click", () => showSettings("invest"));
-spendSettingsBtn.addEventListener("click", () => showSettings("spend"));
-spendSettingsShortcut.addEventListener("click", () => showSettings("spend"));
+budgetSettingsBtn?.addEventListener("click", () => showSettings("budget"));
+budgetSettingsShortcut?.addEventListener("click", () => showSettings("budget"));
 settingsBackBtn.addEventListener("click", showMainFromSettings);
 connectBtn.addEventListener("click", connectRobinhood);
 connectPlaidBtn.addEventListener("click", connectPlaid);
@@ -1166,16 +1342,26 @@ saveBudgetBtn?.addEventListener("click", saveMonthlyBudget);
 enableNotificationsBtn.addEventListener("click", enableNotifications);
 testNotificationBtn.addEventListener("click", sendTestNotification);
 
-document.querySelectorAll(".spend-sub-tab").forEach((btn) => {
+document.querySelectorAll(".budget-sub-tab").forEach((btn) => {
   btn.addEventListener("click", () => {
-    if (btn.dataset.spendView === "activity") setSpendView("activity");
-    else setSpendView("history");
+    setBudgetView(btn.dataset.budgetView);
   });
 });
-historyBackBtn.addEventListener("click", () => setSpendView("history"));
+
+incomePinForm?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  await unlockIncome(incomePinInput.value);
+  incomePinInput.value = "";
+});
+
+incomeSaveBtn?.addEventListener("click", saveIncome);
+goalsAddBtn?.addEventListener("click", () => openGoalEditor(null));
+goalsEditorBack?.addEventListener("click", showGoalsList);
+goalSaveBtn?.addEventListener("click", saveGoal);
+goalDeleteBtn?.addEventListener("click", deleteGoal);
 
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible" && activeTab === "spend") {
+  if (document.visibilityState === "visible" && activeTab === "budget" && budgetView === "spend") {
     loadSpending(true, { silent: true });
   }
 });

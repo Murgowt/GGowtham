@@ -13,6 +13,8 @@ from api.auth import (
     set_session_cookie,
     verify_pin,
 )
+from api.budget import router as budget_router
+from api.goals import router as goals_router
 from api.notifications import router as notifications_router
 from api.portfolio import router as portfolio_router
 from api.spending import router as spending_router
@@ -27,6 +29,8 @@ STATIC_DIR = Path(__file__).parent / "static"
 app.include_router(portfolio_router)
 app.include_router(notifications_router)
 app.include_router(spending_router)
+app.include_router(budget_router)
+app.include_router(goals_router)
 
 
 class LoginRequest(BaseModel):

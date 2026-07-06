@@ -1,11 +1,12 @@
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
+from integrations.app_time import now_app
 from integrations.daily_summary import DAILY_SUMMARY_LAST_SENT_KEY, send_daily_summary
 
 
 def test_daily_summary_rate_limited():
-    recent = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    recent = (now_app() - timedelta(hours=1)).isoformat()
     with (
         patch("integrations.daily_summary.is_configured", return_value=True),
         patch("config.settings.notifications_enabled", True),

@@ -10,8 +10,8 @@ Usage:
 from __future__ import annotations
 
 import sys
-from datetime import datetime, timezone
 
+from integrations.app_time import now_app
 from integrations.spending import (
     _is_settlement_share,
     _parse_date,
@@ -143,7 +143,7 @@ def main() -> int:
         return 1
 
     period_key = sys.argv[1]
-    now = datetime.now(timezone.utc)
+    now = now_app()
     resolved = _resolve_period(period_key, now)
     if not resolved:
         print(f"Unknown period key: {period_key}")

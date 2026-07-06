@@ -1,5 +1,7 @@
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
+
+from integrations.app_time import now_app, to_app_tz
 
 from db.database import get_setting, list_push_subscriptions, set_setting
 from integrations.snaptrade import get_portfolio
@@ -62,14 +64,12 @@ def send_daily_summary(*, force: bool = False) -> dict:
         logger.info("No push subscriptions — skipping daily summary")
         return {"sent": 0, "total": 0, "skipped": True}
 
-    now = datetime.now(timezone.utc)
+    now = now_app()
     if not force:
         last_raw = get_setting(DAILY_SUMMARY_LAST_SENT_KEY)
         if last_raw:
             try:
-                last_sent = datetime.fromisoformat(last_raw)
-                if last_sent.tzinfo is None:
-                    last_sent = last_sent.replace(tzinfo=timezone.utc)
+                last_sent = to_app_tz(datetime.fromisoformat(last_raw))
                 if now - last_sent < DAILY_SUMMARY_MIN_INTERVAL:
                     logger.info(
                         "Daily summary skipped — last sent %s (min interval %sh)",

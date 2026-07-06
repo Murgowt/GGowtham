@@ -1,11 +1,12 @@
 import logging
 import time
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 
 import httpx
 
 from config import settings
 from db.database import get_splitwise_api_key
+from integrations.app_time import app_midnight, now_app, to_app_tz
 from integrations.medium import resolve_medium
 
 logger = logging.getLogger(__name__)
@@ -71,16 +72,16 @@ def get_current_user_id() -> int:
 
 def _parse_expense_date(raw: str) -> datetime:
     if not raw:
-        return datetime.now(timezone.utc)
+        return now_app()
     if raw.endswith("Z"):
-        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        return to_app_tz(datetime.fromisoformat(raw.replace("Z", "+00:00")))
     try:
         dt = datetime.fromisoformat(raw)
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt
+            return app_midnight(dt.year, dt.month, dt.day)
+        return to_app_tz(dt)
     except ValueError:
-        return datetime.fromisoformat(f"{raw}T00:00:00+00:00")
+        return app_midnight(*map(int, raw.split("-")))
 
 
 def _user_balance(expense: dict, user_id: int) -> dict[str, float] | None:
@@ -137,10 +138,9 @@ def _base_txn(
 
 
 def fetch_expenses(*, days: int = 30) -> list[dict]:
-    cutoff = datetime.now(timezone.utc).date().fromordinal(
-        datetime.now(timezone.utc).date().toordinal() - days
-    )
-    return fetch_expenses_between(start=cutoff, end=datetime.now(timezone.utc).date())
+    today = now_app().date()
+    cutoff = today.fromordinal(today.toordinal() - days)
+    return fetch_expenses_between(start=cutoff, end=today)
 
 
 def _paginate_expenses(params: dict) -> list[dict]:
@@ -256,7 +256,9 @@ def fetch_expenses_between(*, start: date, end: date) -> list[dict]:
     by_date = _paginate_expenses({"dated_after": dated_after, "dated_before": dated_before})
 
     # Also fetch recently *updated* expenses — catches new splits backdated before `start`.
-    updated_after = (datetime.now(timezone.utc) - timedelta(days=14)).strftime("%Y-%m-%dT00:00:00Z")
+    updated_after = (
+        now_app() - timedelta(days=14)
+    ).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
     by_updated = _paginate_expenses({"updated_after": updated_after, "dated_before": dated_before})
 
     merged: dict[int, dict] = {}

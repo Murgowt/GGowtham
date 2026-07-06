@@ -1,12 +1,13 @@
 import logging
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 from snaptrade_client import SnapTrade
 
 from config import settings
 from db.database import get_latest_snapshot, get_setting, save_snapshot, set_setting
+from integrations.app_time import now_app, to_app_tz
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +53,7 @@ def _mock_portfolio() -> PortfolioData:
     total_value = sum(h["value"] for h in MOCK_HOLDINGS)
     total_pnl = sum(h["pnl"] for h in MOCK_HOLDINGS)
     total_invested = _total_invested(MOCK_HOLDINGS)
-    now = datetime.now(timezone.utc)
+    now = now_app()
     return PortfolioData(
         total_value=round(total_value, 2),
         total_invested=total_invested,
@@ -65,9 +66,7 @@ def _mock_portfolio() -> PortfolioData:
 
 
 def _snapshot_to_portfolio(snapshot) -> PortfolioData:
-    captured = snapshot.captured_at
-    if captured.tzinfo is None:
-        captured = captured.replace(tzinfo=timezone.utc)
+    captured = to_app_tz(snapshot.captured_at)
     holdings = snapshot.holdings_json or []
     return PortfolioData(
         total_value=snapshot.total_value or 0.0,
@@ -323,7 +322,7 @@ def _fetch_live_holdings() -> PortfolioData | None:
         return None
 
     holdings.sort(key=lambda h: h["value"], reverse=True)
-    now = datetime.now(timezone.utc)
+    now = now_app()
     save_snapshot(round(total_value, 2), round(total_pnl, 2), holdings)
     return PortfolioData(
         total_value=round(total_value, 2),
@@ -348,7 +347,7 @@ def get_portfolio(*, force_refresh: bool = False) -> PortfolioData:
     if not has_brokerage_connection():
         raise RuntimeError("Robinhood not connected. Tap Connect Robinhood first.")
 
-    now = datetime.now(timezone.utc)
+    now = now_app()
     cache_ttl = timedelta(minutes=settings.portfolio_cache_minutes)
 
     if not force_refresh and _cache and _cache_at and (now - _cache_at) < cache_ttl:
