@@ -1,6 +1,6 @@
 import logging
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import httpx
 
@@ -13,6 +13,29 @@ logger = logging.getLogger(__name__)
 
 SPLITWISE_BASE = "https://secure.splitwise.com/api/v3.0"
 SPLITWISE_USER_ID_KEY = "splitwise_user_id"
+
+
+def _splitwise_dated_after(start: date) -> str:
+    """Start of Central calendar day `start`, as UTC (Splitwise expects ISO 8601 Z)."""
+    return (
+        app_midnight(start.year, start.month, start.day)
+        .astimezone(timezone.utc)
+        .strftime("%Y-%m-%dT%H:%M:%SZ")
+    )
+
+
+def _splitwise_dated_before(end: date) -> str:
+    """Exclusive upper bound through end of Central calendar day `end`.
+
+    Splitwise stores expense timestamps in UTC. An expense late on Central `end`
+    can carry a UTC date of `end + 1`; using Central midnight avoids dropping it.
+    """
+    next_central_midnight = app_midnight(end.year, end.month, end.day) + timedelta(days=1)
+    return next_central_midnight.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _splitwise_updated_after(dt: datetime) -> str:
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def is_configured() -> bool:
@@ -247,18 +270,17 @@ def fetch_expenses_between(*, start: date, end: date) -> list[dict]:
         return []
 
     user_id = get_current_user_id()
-    dated_after = start.isoformat()
-    # Splitwise dated_before is exclusive — add 1 day so expenses dated `end` are included.
-    dated_before = (end + timedelta(days=1)).isoformat()
+    dated_after = _splitwise_dated_after(start)
+    dated_before = _splitwise_dated_before(end)
     medium = resolve_medium(source="splitwise")
 
     # By expense date (billing window).
     by_date = _paginate_expenses({"dated_after": dated_after, "dated_before": dated_before})
 
     # Also fetch recently *updated* expenses — catches new splits backdated before `start`.
-    updated_after = (
-        now_app() - timedelta(days=14)
-    ).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    updated_after = _splitwise_updated_after(
+        (now_app() - timedelta(days=14)).replace(hour=0, minute=0, second=0, microsecond=0)
+    )
     by_updated = _paginate_expenses({"updated_after": updated_after, "dated_before": dated_before})
 
     merged: dict[int, dict] = {}
