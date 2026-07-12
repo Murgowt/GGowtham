@@ -1,4 +1,5 @@
 import logging
+import time
 from datetime import date, datetime, timedelta
 
 import httpx
@@ -226,12 +227,15 @@ def _map_plaid_transaction(txn: dict, account_lookup: dict[str, dict]) -> dict |
     amount = round(-raw_amount, 2)
 
     date_raw = (
-        txn.get("authorized_date")
+        txn.get("authorized_datetime")
+        or txn.get("authorized_date")
         or txn.get("datetime")
         or txn.get("date")
         or ""
     )
-    if "T" in date_raw:
+    if not date_raw and txn.get("pending"):
+        dt = now_app()
+    elif "T" in date_raw:
         dt = datetime.fromisoformat(date_raw.replace("Z", "+00:00"))
     else:
         dt = datetime.fromisoformat(f"{date_raw}T12:00:00+00:00")
@@ -278,6 +282,20 @@ def _map_plaid_transaction(txn: dict, account_lookup: dict[str, dict]) -> dict |
 
 
 PLAID_REFRESH_MIN_INTERVAL = timedelta(minutes=15)
+PLAID_CARD_REFRESH_MIN_INTERVAL = timedelta(minutes=2)
+PLAID_CARD_REFRESH_POLL_PASSES = 4
+PLAID_CARD_REFRESH_POLL_DELAY_SEC = 2
+
+
+def _item_is_card_only(accounts: list[dict]) -> bool:
+    active = [a for a in accounts if a.get("account_id")]
+    return bool(active) and all(a.get("source") == "card" for a in active)
+
+
+def _refresh_min_interval(accounts: list[dict]) -> timedelta:
+    if _item_is_card_only(accounts):
+        return PLAID_CARD_REFRESH_MIN_INTERVAL
+    return PLAID_REFRESH_MIN_INTERVAL
 
 
 def _txn_date(mapped: dict) -> date:
@@ -303,19 +321,25 @@ def _drop_superseded_pending(transactions: list[dict]) -> list[dict]:
     ]
 
 
-def _request_item_refresh(access_token: str, item_id: str) -> None:
+def _request_item_refresh(
+    access_token: str,
+    item_id: str,
+    *,
+    accounts: list[dict],
+) -> bool:
     """Ask Plaid to pull latest transactions from the bank (rate-limited)."""
     from db.database import get_setting, set_setting
 
     key = f"plaid_refresh_{item_id}"
     now = now_app()
+    min_interval = _refresh_min_interval(accounts)
     last_raw = get_setting(key)
     if last_raw:
         try:
             last = to_app_tz(datetime.fromisoformat(last_raw))
-            if now - last < PLAID_REFRESH_MIN_INTERVAL:
+            if now - last < min_interval:
                 logger.info("Skipping Plaid refresh for %s (recent)", item_id)
-                return
+                return False
         except ValueError:
             pass
 
@@ -323,8 +347,10 @@ def _request_item_refresh(access_token: str, item_id: str) -> None:
         _post("/transactions/refresh", {"access_token": access_token})
         set_setting(key, now.isoformat())
         logger.info("Requested Plaid transaction refresh for %s", item_id)
+        return True
     except httpx.HTTPError:
         logger.warning("Plaid transactions/refresh failed for %s", item_id, exc_info=True)
+        return False
 
 
 def _sync_item_transactions(
@@ -335,31 +361,49 @@ def _sync_item_transactions(
     *,
     start: date,
     end: date,
+    force_refresh: bool = False,
+    item_id: str | None = None,
 ) -> tuple[list[dict], str | None, dict[str, dict]]:
     """Use /transactions/sync — merge into cache so incremental updates keep history."""
     account_lookup = {a["account_id"]: a for a in accounts if a.get("account_id")}
     store = dict(cache)
     current_cursor = cursor
 
-    while True:
-        body: dict = {"access_token": access_token}
-        if current_cursor:
-            body["cursor"] = current_cursor
-        data = _post("/transactions/sync", body)
+    refreshed = False
+    if force_refresh and item_id:
+        refreshed = _request_item_refresh(
+            access_token, item_id, accounts=accounts,
+        )
 
-        for txn in (data.get("added") or []) + (data.get("modified") or []):
-            mapped = _map_plaid_transaction(txn, account_lookup)
-            if mapped:
-                store[mapped["id"]] = mapped
+    poll_passes = (
+        PLAID_CARD_REFRESH_POLL_PASSES
+        if refreshed and _item_is_card_only(accounts)
+        else 1
+    )
 
-        for removed in data.get("removed") or []:
-            txn_id = removed.get("transaction_id")
-            if txn_id:
-                store.pop(f"plaid:{txn_id}", None)
+    for pass_idx in range(poll_passes):
+        if pass_idx > 0:
+            time.sleep(PLAID_CARD_REFRESH_POLL_DELAY_SEC)
 
-        current_cursor = data.get("next_cursor")
-        if not data.get("has_more"):
-            break
+        while True:
+            body: dict = {"access_token": access_token}
+            if current_cursor:
+                body["cursor"] = current_cursor
+            data = _post("/transactions/sync", body)
+
+            for txn in (data.get("added") or []) + (data.get("modified") or []):
+                mapped = _map_plaid_transaction(txn, account_lookup)
+                if mapped:
+                    store[mapped["id"]] = mapped
+
+            for removed in data.get("removed") or []:
+                txn_id = removed.get("transaction_id")
+                if txn_id:
+                    store.pop(f"plaid:{txn_id}", None)
+
+            current_cursor = data.get("next_cursor")
+            if not data.get("has_more"):
+                break
 
     prune_before = start - timedelta(days=7)
     store = {
@@ -404,9 +448,6 @@ def fetch_plaid_transactions(*, days: int = 30, force_refresh: bool = False) -> 
                 account.setdefault("institution_name", institution_name)
                 account.setdefault("institution_id", institution_id)
 
-        if force_refresh:
-            _request_item_refresh(item.access_token, item.item_id)
-
         try:
             cache = dict(item.transactions_cache_json or {})
             txns, new_cursor, new_cache = _sync_item_transactions(
@@ -416,6 +457,8 @@ def fetch_plaid_transactions(*, days: int = 30, force_refresh: bool = False) -> 
                 cache,
                 start=start,
                 end=end,
+                force_refresh=force_refresh,
+                item_id=item.item_id,
             )
         except httpx.HTTPError:
             logger.exception("Plaid transactions/sync failed for item %s", item.item_id)
@@ -467,9 +510,6 @@ def fetch_plaid_transactions_between(
                 account.setdefault("institution_name", institution_name)
                 account.setdefault("institution_id", institution_id)
 
-        if force_refresh:
-            _request_item_refresh(item.access_token, item.item_id)
-
         try:
             cache = dict(item.transactions_cache_json or {})
             txns, new_cursor, new_cache = _sync_item_transactions(
@@ -479,6 +519,8 @@ def fetch_plaid_transactions_between(
                 cache,
                 start=start,
                 end=end,
+                force_refresh=force_refresh,
+                item_id=item.item_id,
             )
         except httpx.HTTPError:
             logger.exception("Plaid transactions/sync failed for item %s", item.item_id)

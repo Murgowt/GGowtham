@@ -468,3 +468,23 @@ def test_budget_amount_override():
     assert edited["budget_used"] == 150.0
     assert edited["budget_remaining"] == 2050.0
     assert txns[0]["amount_edited"] is True
+
+
+def test_current_period_budget_records_excludes_prior_period():
+    from integrations.spending import (
+        _current_period_budget_records,
+        _period_bounds,
+        _public_transactions,
+        apply_spending_rules,
+    )
+
+    now = now_app()
+    period_start, _ = _period_bounds(now)
+    prior = (period_start - timedelta(days=1)).isoformat()
+
+    txns = apply_spending_rules([
+        _card(id="card:current", amount=-50.0, date=period_start.isoformat()),
+        _card(id="card:prior", amount=-99.0, date=prior),
+    ])
+    visible = _current_period_budget_records(_public_transactions(txns), now)
+    assert [t["id"] for t in visible] == ["card:current"]

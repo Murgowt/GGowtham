@@ -279,6 +279,26 @@ def _filter_budget_list_records(transactions: list[dict]) -> list[dict]:
     return [t for t in transactions if _is_budget_list_record(t)]
 
 
+def _filter_period_transactions(
+    transactions: list[dict],
+    period_start: datetime,
+    period_end: datetime,
+) -> list[dict]:
+    return [
+        t for t in transactions
+        if period_start <= _parse_date(t["date"]) < period_end
+    ]
+
+
+def _current_period_budget_records(transactions: list[dict], now: datetime) -> list[dict]:
+    period_start, period_end = _period_bounds(now)
+    return _filter_period_transactions(
+        _filter_budget_list_records(transactions),
+        period_start,
+        period_end,
+    )
+
+
 def _filter_expense_records(transactions: list[dict]) -> list[dict]:
     return _filter_budget_list_records(transactions)
 
@@ -832,7 +852,7 @@ def _snapshot_to_spending(snapshot) -> SpendingData:
     visible = _public_transactions(resolved)
     _annotate_excluded_flag(visible, excluded_ids)
     return SpendingData(
-        transactions=_filter_budget_list_records(visible),
+        transactions=_current_period_budget_records(visible, now_app()),
         summary=summary,
         cached=True,
         updated_at=captured,
@@ -878,7 +898,7 @@ def _build_spending(
     summary = _summary_with_budget(resolved, now=now, excluded_ids=excluded_ids)
     visible = _public_transactions(resolved)
     _annotate_excluded_flag(visible, excluded_ids)
-    expenses = _filter_budget_list_records(visible)
+    expenses = _current_period_budget_records(visible, now)
     if not expenses and source == "live":
         source = "empty"
     return SpendingData(
@@ -914,7 +934,7 @@ def _mock_spending(*, days: int) -> SpendingData:
     visible = _public_transactions(resolved)
     _annotate_excluded_flag(visible, excluded_ids)
     return SpendingData(
-        transactions=_filter_budget_list_records(visible),
+        transactions=_current_period_budget_records(visible, now),
         summary=summary,
         cached=False,
         updated_at=now,
