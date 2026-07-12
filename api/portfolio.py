@@ -1,9 +1,10 @@
 from fastapi import APIRouter, HTTPException, Request
 
 from api.auth import require_auth
+from db.database import count_manual_investments
+from integrations.portfolio_service import get_merged_portfolio
 from integrations.snaptrade import (
     get_connection_portal_url,
-    get_portfolio,
     has_brokerage_connection,
     is_configured,
 )
@@ -15,7 +16,7 @@ router = APIRouter(prefix="/api", tags=["portfolio"])
 def portfolio(request: Request, refresh: bool = False):
     require_auth(request)
     try:
-        data = get_portfolio(force_refresh=refresh)
+        data = get_merged_portfolio(force_refresh=refresh)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
@@ -27,15 +28,21 @@ def portfolio(request: Request, refresh: bool = False):
         "cached": data.cached,
         "source": data.source,
         "updated_at": data.updated_at.isoformat(),
+        "fx_rate": data.fx_rate,
+        "fx_as_of": data.fx_as_of.isoformat() if data.fx_as_of else None,
+        "manual_count": count_manual_investments(),
     }
 
 
 @router.get("/connection/status")
 def connection_status(request: Request):
     require_auth(request)
+    manual_count = count_manual_investments()
     return {
         "configured": is_configured(),
         "connected": has_brokerage_connection(),
+        "manual_count": manual_count,
+        "has_holdings": has_brokerage_connection() or manual_count > 0,
     }
 
 

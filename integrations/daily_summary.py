@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from integrations.app_time import now_app, to_app_tz
 
 from db.database import get_setting, list_push_subscriptions, set_setting
-from integrations.snaptrade import get_portfolio
+from integrations.portfolio_service import get_merged_portfolio
 from integrations.webpush import is_configured, send_to_subscription
 
 logger = logging.getLogger(__name__)
@@ -87,12 +87,12 @@ def send_daily_summary(*, force: bool = False) -> dict:
 
     body = None
     try:
-        portfolio = get_portfolio(force_refresh=True)
+        portfolio = get_merged_portfolio(force_refresh=True)
         body = format_summary(portfolio)
     except Exception:
         logger.warning("Live portfolio refresh failed, trying cached data", exc_info=True)
         try:
-            portfolio = get_portfolio(force_refresh=False)
+            portfolio = get_merged_portfolio(force_refresh=False)
             body = format_summary(portfolio)
         except Exception:
             logger.warning("Cached portfolio failed, sending generic message", exc_info=True)

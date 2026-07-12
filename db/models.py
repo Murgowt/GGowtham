@@ -120,6 +120,25 @@ class Goal(Base):
     )
 
 
+class ManualInvestment(Base):
+    """User-entered India investment (FD, MF, stock) valued on refresh."""
+
+    __tablename__ = "manual_investments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    type: Mapped[str] = mapped_column(String(20), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="INR")
+    invested_inr: Mapped[float] = mapped_column(Float, nullable=False)
+    details_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
 class IncomeProfile(Base):
     """Single NL paycheck + allocation plan (PIN-gated in API)."""
 

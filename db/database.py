@@ -2,7 +2,20 @@ from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from config import settings
-from db.models import AppSetting, Base, Goal, IncomeProfile, PlaidItem, PortfolioSnapshot, PushSubscription, SpendingAlertSent, SpendingAmountOverride, SpendingExclusion, SpendingSnapshot
+from db.models import (
+    AppSetting,
+    Base,
+    Goal,
+    IncomeProfile,
+    ManualInvestment,
+    PlaidItem,
+    PortfolioSnapshot,
+    PushSubscription,
+    SpendingAlertSent,
+    SpendingAmountOverride,
+    SpendingExclusion,
+    SpendingSnapshot,
+)
 
 connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
 engine = create_engine(settings.database_url, connect_args=connect_args)
@@ -10,8 +23,8 @@ SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
 
 def init_db() -> None:
-    Base.metadata.create_all(bind=engine)
     _migrate_schema()
+    Base.metadata.create_all(bind=engine)
 
 
 def _migrate_schema() -> None:
@@ -29,6 +42,14 @@ def _migrate_schema() -> None:
                 conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
             except Exception:
                 pass
+        try:
+            rows = conn.execute(text("PRAGMA table_info(manual_investments)")).fetchall()
+            if rows:
+                col_names = {row[1] for row in rows}
+                if "name" not in col_names:
+                    conn.execute(text("DROP TABLE manual_investments"))
+        except Exception:
+            pass
 
 
 def get_setting(key: str) -> str | None:
@@ -362,6 +383,86 @@ def get_income_profile() -> IncomeProfile | None:
 def income_profile_configured() -> bool:
     row = get_income_profile()
     return bool(row and row.raw_text.strip())
+
+
+def list_manual_investments() -> list[ManualInvestment]:
+    with SessionLocal() as session:
+        stmt = select(ManualInvestment).order_by(ManualInvestment.updated_at.desc())
+        return list(session.scalars(stmt).all())
+
+
+def get_manual_investment(investment_id: int) -> ManualInvestment | None:
+    with SessionLocal() as session:
+        return session.get(ManualInvestment, investment_id)
+
+
+def create_manual_investment(
+    *,
+    type: str,
+    name: str,
+    currency: str,
+    invested_inr: float,
+    details_json: dict | None,
+) -> ManualInvestment:
+    with SessionLocal() as session:
+        row = ManualInvestment(
+            type=type,
+            name=name,
+            currency=currency,
+            invested_inr=round(float(invested_inr), 2),
+            details_json=details_json or {},
+        )
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        return row
+
+
+def update_manual_investment(
+    investment_id: int,
+    *,
+    type: str,
+    name: str,
+    currency: str,
+    invested_inr: float,
+    details_json: dict | None,
+) -> ManualInvestment | None:
+    with SessionLocal() as session:
+        row = session.get(ManualInvestment, investment_id)
+        if not row:
+            return None
+        row.type = type
+        row.name = name
+        row.currency = currency
+        row.invested_inr = round(float(invested_inr), 2)
+        row.details_json = details_json or {}
+        session.commit()
+        session.refresh(row)
+        return row
+
+
+def update_manual_investment_details(investment_id: int, details_json: dict) -> None:
+    with SessionLocal() as session:
+        row = session.get(ManualInvestment, investment_id)
+        if not row:
+            return
+        row.details_json = details_json
+        session.commit()
+
+
+def delete_manual_investment(investment_id: int) -> bool:
+    with SessionLocal() as session:
+        row = session.get(ManualInvestment, investment_id)
+        if not row:
+            return False
+        session.delete(row)
+        session.commit()
+        return True
+
+
+def count_manual_investments() -> int:
+    with SessionLocal() as session:
+        return len(list(session.scalars(select(ManualInvestment)).all()))
 
 
 def upsert_income_profile(

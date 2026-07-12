@@ -12,7 +12,7 @@ def test_daily_summary_rate_limited():
         patch("config.settings.notifications_enabled", True),
         patch("integrations.daily_summary.list_push_subscriptions", return_value=[{"endpoint": "x", "subscription_json": {}}]),
         patch("integrations.daily_summary.get_setting", return_value=recent),
-        patch("integrations.daily_summary.get_portfolio") as mock_portfolio,
+        patch("integrations.daily_summary.get_merged_portfolio") as mock_portfolio,
         patch("integrations.daily_summary.send_to_subscription") as mock_send,
     ):
         result = send_daily_summary()
@@ -31,7 +31,7 @@ def test_daily_summary_sends_when_not_recent():
         patch("integrations.daily_summary.list_push_subscriptions", return_value=[{"endpoint": "x", "subscription_json": {"k": 1}}]),
         patch("integrations.daily_summary.get_setting", return_value=None),
         patch("integrations.daily_summary.set_setting") as mock_set,
-        patch("integrations.daily_summary.get_portfolio") as mock_portfolio,
+        patch("integrations.daily_summary.get_merged_portfolio") as mock_portfolio,
         patch("integrations.daily_summary.send_to_subscription", return_value=True),
     ):
         portfolio = MagicMock()

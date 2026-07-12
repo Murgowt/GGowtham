@@ -12,6 +12,7 @@ const budgetRefreshBtn = document.getElementById("budget-refresh-btn");
 const budgetSettingsBtn = document.getElementById("budget-settings-btn");
 const settingsBackBtn = document.getElementById("settings-back-btn");
 const connectBtn = document.getElementById("connect-btn");
+const connectAddInvestmentBtn = document.getElementById("connect-add-investment-btn");
 const connectBanner = document.getElementById("connect-banner");
 const spendConnectBanner = document.getElementById("spend-connect-banner");
 const budgetSettingsShortcut = document.getElementById("budget-settings-shortcut");
@@ -83,6 +84,37 @@ const goalSaveStatus = document.getElementById("goal-save-status");
 const goalSummaryCard = document.getElementById("goal-summary-card");
 const goalSummaryText = document.getElementById("goal-summary-text");
 const goalExtractionFailed = document.getElementById("goal-extraction-failed");
+const addInvestmentBtn = document.getElementById("add-investment-btn");
+const investmentFormScreen = document.getElementById("investment-form-screen");
+const investmentFormBack = document.getElementById("investment-form-back");
+const investmentFormTitle = document.getElementById("investment-form-title");
+const investmentTypePicker = document.getElementById("investment-type-picker");
+const investmentForm = document.getElementById("investment-form");
+const investmentIdInput = document.getElementById("investment-id");
+const investmentTypeInput = document.getElementById("investment-type");
+const investmentNameInput = document.getElementById("investment-name");
+const investmentInvestedInput = document.getElementById("investment-invested");
+const investmentFdFields = document.getElementById("investment-fd-fields");
+const investmentMfFields = document.getElementById("investment-mf-fields");
+const investmentStockFields = document.getElementById("investment-stock-fields");
+const fdPrincipalInput = document.getElementById("fd-principal");
+const fdRateInput = document.getElementById("fd-rate");
+const fdStartDateInput = document.getElementById("fd-start-date");
+const fdMaturityDateInput = document.getElementById("fd-maturity-date");
+const fdBankInput = document.getElementById("fd-bank");
+const mfSearchInput = document.getElementById("mf-search");
+const mfSearchResults = document.getElementById("mf-search-results");
+const mfSchemeCodeInput = document.getElementById("mf-scheme-code");
+const mfSelectedEl = document.getElementById("mf-selected");
+const mfUnitsInput = document.getElementById("mf-units");
+const mfPurchaseNavInput = document.getElementById("mf-purchase-nav");
+const stockSymbolInput = document.getElementById("stock-symbol");
+const stockQuantityInput = document.getElementById("stock-quantity");
+const stockAvgBuyInput = document.getElementById("stock-avg-buy");
+const investmentFormError = document.getElementById("investment-form-error");
+const investmentSaveBtn = document.getElementById("investment-save-btn");
+const investmentDeleteBtn = document.getElementById("investment-delete-btn");
+const fxRateEl = document.getElementById("fx-rate");
 
 let activeTab = "invest";
 let budgetView = "spend";
@@ -111,6 +143,20 @@ function setLoading(on) {
 
 function formatMoney(n) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
+}
+
+function formatInr(n) {
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 0,
+  }).format(n);
+}
+
+function formatInrSigned(n) {
+  if (n > 0) return `+${formatInr(n)}`;
+  if (n < 0) return `−${formatInr(Math.abs(n))}`;
+  return formatInr(0);
 }
 
 function formatSignedMoney(n) {
@@ -793,7 +839,80 @@ function clearSummary() {
   holdingsCountEl.textContent = "—";
 }
 
+function holdingMetaLine(h) {
+  if (h.type === "fd" && h.meta?.maturity_date) {
+    const onTrack = h.meta.on_track_inr ? formatInr(h.meta.on_track_inr) : "";
+    return `Est. close today · On track ${onTrack} · Matures ${h.meta.maturity_date}`;
+  }
+  if (h.region === "IN") {
+    const unitLabel = h.type === "mf" ? "units" : "sh";
+    return `${h.shares} ${unitLabel}${h.stale ? " · stale quote" : ""}`;
+  }
+  return `${h.shares} sh`;
+}
+
+function holdingBucket(h) {
+  if (h.type === "fd") return "fd";
+  if (h.type === "mf") return "mf";
+  if (h.type === "stock") return "india";
+  return "us";
+}
+
+const HOLDINGS_SECTIONS = [
+  { key: "us", title: "US stocks" },
+  { key: "india", title: "Indian stocks" },
+  { key: "mf", title: "Mutual funds" },
+  { key: "fd", title: "Fixed Deposit" },
+];
+
+function renderHoldingRow(h, totalValue) {
+  const alloc = totalValue ? (h.value / totalValue) * 100 : 0;
+  const inrLine = h.region === "IN" && h.value_inr != null
+    ? `<div class="holding-inr">${formatInr(h.value_inr)} · ${formatInrSigned(h.pnl_inr || 0)}</div>`
+    : "";
+  const editable = h.source === "manual" ? ` data-investment-id="${h.id}"` : "";
+  return `
+    <li class="holding${h.source === "manual" ? " holding-manual" : ""}"${editable}>
+      <div class="ticker-badge">${tickerBadge(h.ticker)}</div>
+      <div class="holding-info">
+        <div class="ticker">${h.ticker}</div>
+        <div class="holding-meta">
+          <span class="shares">${holdingMetaLine(h)}</span>
+          <div class="allocation-bar" title="${alloc.toFixed(1)}% of portfolio">
+            <div class="allocation-fill" style="width: ${Math.max(alloc, 2)}%"></div>
+          </div>
+        </div>
+        ${inrLine}
+      </div>
+      <div class="holding-right">
+        <div class="value">${formatMoney(h.value)}</div>
+        <div class="pnl">${formatPnl(h.pnl, h.pnl_pct)}</div>
+      </div>
+    </li>`;
+}
+
+function renderHoldingsGroups(holdings, totalValue) {
+  const buckets = { us: [], india: [], mf: [], fd: [] };
+  for (const h of holdings) {
+    buckets[holdingBucket(h)].push(h);
+  }
+
+  return HOLDINGS_SECTIONS
+    .filter(({ key }) => buckets[key].length > 0)
+    .map(({ key, title }) => `
+      <section class="holdings-group">
+        <p class="holdings-group-title">${title}</p>
+        <ul class="holdings">
+          ${buckets[key].map((h) => renderHoldingRow(h, totalValue)).join("")}
+        </ul>
+      </section>`)
+    .join("");
+}
+
 function renderPortfolio(data) {
+  if (investmentFormScreen && !investmentFormScreen.classList.contains("hidden")) {
+    return;
+  }
   hide(connectBanner);
   totalValueEl.textContent = formatMoney(data.total_value);
   totalInvestedEl.textContent = formatMoney(data.total_invested);
@@ -821,34 +940,34 @@ function renderPortfolio(data) {
 
   const sourceLabels = {
     live: "Live · Robinhood",
+    "live+manual": "Live · Robinhood + India",
     cache: "Cached",
+    "cache+manual": "Cached + India",
     snapshot: "Saved snapshot",
     mock: "Mock data",
+    "mock+manual": "Mock + India",
+    manual: "India · Manual",
   };
-  const isLive = data.source === "live" || data.source === "cache";
+  const isLive = ["live", "cache", "live+manual", "cache+manual", "manual"].includes(data.source);
   statusEl.classList.toggle("offline", !isLive);
   statusTextEl.textContent = sourceLabels[data.source] || data.source;
 
-  holdingsList.innerHTML = data.holdings.map((h) => {
-    const alloc = data.total_value ? (h.value / data.total_value) * 100 : 0;
-    return `
-    <li class="holding">
-      <div class="ticker-badge">${tickerBadge(h.ticker)}</div>
-      <div class="holding-info">
-        <div class="ticker">${h.ticker}</div>
-        <div class="holding-meta">
-          <span class="shares">${h.shares} sh</span>
-          <div class="allocation-bar" title="${alloc.toFixed(1)}% of portfolio">
-            <div class="allocation-fill" style="width: ${Math.max(alloc, 2)}%"></div>
-          </div>
-        </div>
-      </div>
-      <div class="holding-right">
-        <div class="value">${formatMoney(h.value)}</div>
-        <div class="pnl">${formatPnl(h.pnl, h.pnl_pct)}</div>
-      </div>
-    </li>`;
-  }).join("");
+  if (data.fx_rate && fxRateEl) {
+    show(fxRateEl);
+    const fxDate = data.fx_as_of ? formatTime(data.fx_as_of).split(",")[0] : "";
+    fxRateEl.textContent = `USD/INR ${Number(data.fx_rate).toFixed(2)}${fxDate ? ` · ${fxDate}` : ""}`;
+  } else {
+    hide(fxRateEl);
+  }
+
+  holdingsList.innerHTML = renderHoldingsGroups(data.holdings, data.total_value);
+
+  holdingsList.querySelectorAll(".holding-manual").forEach((el) => {
+    el.addEventListener("click", () => {
+      const id = el.dataset.investmentId;
+      if (id) openInvestmentEditor(Number(id));
+    });
+  });
 
   updatedAtEl.textContent = `Updated ${formatTime(data.updated_at)}`;
 }
@@ -1068,16 +1187,213 @@ async function sendTestNotification() {
 
 async function checkConnection() {
   const status = await api("/api/connection/status");
-  if (!status.connected) {
+  if (!status.has_holdings) {
     show(connectBanner);
     holdingsList.innerHTML = "";
     clearSummary();
     updatedAtEl.textContent = "";
+    hide(fxRateEl);
     statusEl.classList.add("offline");
-    statusTextEl.textContent = "Not connected";
+    statusTextEl.textContent = status.manual_count > 0 ? "Unable to load" : "Not connected";
     return false;
   }
+  if (!status.connected && status.manual_count > 0) {
+    hide(connectBanner);
+  }
   return true;
+}
+
+let mfSearchTimer = null;
+
+function resetInvestmentForm() {
+  investmentForm?.reset();
+  if (investmentIdInput) investmentIdInput.value = "";
+  if (investmentTypeInput) investmentTypeInput.value = "";
+  if (mfSchemeCodeInput) mfSchemeCodeInput.value = "";
+  if (mfSearchResults) mfSearchResults.innerHTML = "";
+  hide(mfSelectedEl);
+  hide(investmentFormError);
+  hide(investmentDeleteBtn);
+  investmentForm?.classList.add("hidden");
+  investmentTypePicker?.classList.remove("hidden");
+  [investmentFdFields, investmentMfFields, investmentStockFields].forEach((el) => hide(el));
+}
+
+function showInvestmentTypeFields(type) {
+  [investmentFdFields, investmentMfFields, investmentStockFields].forEach((el) => hide(el));
+  if (type === "fd") show(investmentFdFields);
+  if (type === "mf") show(investmentMfFields);
+  if (type === "stock") show(investmentStockFields);
+}
+
+function openInvestmentForm(type = null, investment = null) {
+  resetInvestmentForm();
+  hide(holdingsList.closest(".holdings-section"));
+  document.querySelector(".hero-card")?.classList.add("hidden");
+  document.querySelector(".metrics-row")?.classList.add("hidden");
+  show(investmentFormScreen);
+
+  if (investment) {
+    setText(investmentFormTitle, "Edit investment");
+    investmentIdInput.value = String(investment.id);
+    investmentTypeInput.value = investment.type;
+    investmentNameInput.value = investment.name;
+    investmentInvestedInput.value = investment.invested_inr;
+    hide(investmentTypePicker);
+    show(investmentForm);
+    showInvestmentTypeFields(investment.type);
+    show(investmentDeleteBtn);
+
+    const d = investment.details || {};
+    if (investment.type === "fd") {
+      fdPrincipalInput.value = d.principal || investment.invested_inr;
+      fdRateInput.value = d.rate || "";
+      fdStartDateInput.value = d.start_date || "";
+      fdMaturityDateInput.value = d.maturity_date || "";
+      fdBankInput.value = d.bank || "HDFC";
+    } else if (investment.type === "mf") {
+      mfSchemeCodeInput.value = d.scheme_code || "";
+      mfUnitsInput.value = d.units || "";
+      mfPurchaseNavInput.value = d.purchase_nav || "";
+      if (d.scheme_name) {
+        mfSelectedEl.textContent = d.scheme_name;
+        show(mfSelectedEl);
+      }
+    } else if (investment.type === "stock") {
+      stockSymbolInput.value = (d.symbol || "").replace(/\.(NS|BO)$/i, "");
+      stockQuantityInput.value = d.quantity || "";
+      stockAvgBuyInput.value = d.avg_buy_price || "";
+    }
+    return;
+  }
+
+  setText(investmentFormTitle, "Add investment");
+  if (type) {
+    investmentTypeInput.value = type;
+    hide(investmentTypePicker);
+    show(investmentForm);
+    showInvestmentTypeFields(type);
+    if (type === "fd") fdBankInput.value = "HDFC";
+  }
+}
+
+function closeInvestmentForm() {
+  hide(investmentFormScreen);
+  show(holdingsList.closest(".holdings-section"));
+  document.querySelector(".hero-card")?.classList.remove("hidden");
+  document.querySelector(".metrics-row")?.classList.remove("hidden");
+  resetInvestmentForm();
+}
+
+async function openInvestmentEditor(id) {
+  try {
+    const investment = await api(`/api/investments/${id}`);
+    openInvestmentForm(null, investment);
+  } catch (err) {
+    statusTextEl.textContent = err.message;
+  }
+}
+
+function buildInvestmentPayload() {
+  const type = investmentTypeInput.value;
+  const invested = Number(investmentInvestedInput.value);
+  const details = {};
+
+  if (type === "fd") {
+    details.principal = Number(fdPrincipalInput.value || invested);
+    details.rate = Number(fdRateInput.value);
+    details.start_date = fdStartDateInput.value;
+    details.maturity_date = fdMaturityDateInput.value;
+    details.bank = fdBankInput.value.trim() || "HDFC";
+    details.compounding = "quarterly";
+    details.penalty_pct = 1.0;
+  } else if (type === "mf") {
+    details.scheme_code = Number(mfSchemeCodeInput.value);
+    details.scheme_name = mfSelectedEl.textContent || investmentNameInput.value.trim();
+    details.units = Number(mfUnitsInput.value);
+    const nav = Number(mfPurchaseNavInput.value);
+    if (nav > 0) details.purchase_nav = nav;
+  } else if (type === "stock") {
+    details.symbol = stockSymbolInput.value.trim().toUpperCase();
+    details.exchange = "NSE";
+    details.quantity = Number(stockQuantityInput.value);
+    details.avg_buy_price = Number(stockAvgBuyInput.value);
+  }
+
+  return {
+    type,
+    name: investmentNameInput.value.trim(),
+    invested_inr: invested,
+    details,
+  };
+}
+
+async function saveInvestment(e) {
+  e.preventDefault();
+  hide(investmentFormError);
+  setLoading(true);
+  try {
+    const payload = buildInvestmentPayload();
+    const id = investmentIdInput.value;
+    if (id) {
+      await api(`/api/investments/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+    } else {
+      await api("/api/investments", { method: "POST", body: JSON.stringify(payload) });
+    }
+    closeInvestmentForm();
+    await loadPortfolio(true);
+  } catch (err) {
+    investmentFormError.textContent = err.message;
+    show(investmentFormError);
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function deleteInvestment() {
+  const id = investmentIdInput.value;
+  if (!id || !window.confirm("Delete this investment?")) return;
+  setLoading(true);
+  try {
+    await api(`/api/investments/${id}`, { method: "DELETE" });
+    closeInvestmentForm();
+    await loadPortfolio(true);
+  } catch (err) {
+    investmentFormError.textContent = err.message;
+    show(investmentFormError);
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function searchMfSchemes(query) {
+  if (!query || query.length < 2) {
+    mfSearchResults.innerHTML = "";
+    return;
+  }
+  try {
+    const { schemes } = await api(`/api/investments/mf/search?q=${encodeURIComponent(query)}`);
+    mfSearchResults.innerHTML = schemes.map((s) => `
+      <li>
+        <button type="button" class="mf-result-btn" data-code="${s.scheme_code}" data-name="${s.scheme_name.replace(/"/g, "&quot;")}">
+          ${s.scheme_name}
+        </button>
+      </li>`).join("");
+    mfSearchResults.querySelectorAll(".mf-result-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        mfSchemeCodeInput.value = btn.dataset.code;
+        mfSelectedEl.textContent = btn.dataset.name;
+        show(mfSelectedEl);
+        if (!investmentNameInput.value.trim()) {
+          investmentNameInput.value = btn.dataset.name.slice(0, 80);
+        }
+        mfSearchResults.innerHTML = "";
+        mfSearchInput.value = "";
+      });
+    });
+  } catch {
+    mfSearchResults.innerHTML = "";
+  }
 }
 
 async function loadPortfolio(refresh = false) {
@@ -1336,6 +1652,18 @@ budgetSettingsBtn?.addEventListener("click", () => showSettings("budget"));
 budgetSettingsShortcut?.addEventListener("click", () => showSettings("budget"));
 settingsBackBtn.addEventListener("click", showMainFromSettings);
 connectBtn.addEventListener("click", connectRobinhood);
+connectAddInvestmentBtn?.addEventListener("click", () => openInvestmentForm());
+addInvestmentBtn?.addEventListener("click", () => openInvestmentForm());
+investmentFormBack?.addEventListener("click", closeInvestmentForm);
+investmentForm?.addEventListener("submit", saveInvestment);
+investmentDeleteBtn?.addEventListener("click", deleteInvestment);
+investmentTypePicker?.querySelectorAll(".investment-type-btn").forEach((btn) => {
+  btn.addEventListener("click", () => openInvestmentForm(btn.dataset.type));
+});
+mfSearchInput?.addEventListener("input", () => {
+  clearTimeout(mfSearchTimer);
+  mfSearchTimer = setTimeout(() => searchMfSchemes(mfSearchInput.value.trim()), 300);
+});
 connectPlaidBtn.addEventListener("click", connectPlaid);
 saveSplitwiseBtn.addEventListener("click", saveSplitwiseKey);
 saveBudgetBtn?.addEventListener("click", saveMonthlyBudget);
