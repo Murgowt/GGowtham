@@ -1,4 +1,4 @@
-const portfolioScreen = document.getElementById("portfolio-screen");
+const loginScreen = document.getElementById("login-screen");
 const portfolioScreen = document.getElementById("portfolio-screen");
 const budgetScreen = document.getElementById("budget-screen");
 const goalsScreen = document.getElementById("goals-screen");
