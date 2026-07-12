@@ -1,4 +1,4 @@
-const loginScreen = document.getElementById("login-screen");
+const portfolioScreen = document.getElementById("portfolio-screen");
 const portfolioScreen = document.getElementById("portfolio-screen");
 const budgetScreen = document.getElementById("budget-screen");
 const goalsScreen = document.getElementById("goals-screen");
@@ -1228,10 +1228,13 @@ function showInvestmentTypeFields(type) {
 
 function openInvestmentForm(type = null, investment = null) {
   resetInvestmentForm();
-  hide(holdingsList.closest(".holdings-section"));
-  document.querySelector(".hero-card")?.classList.add("hidden");
-  document.querySelector(".metrics-row")?.classList.add("hidden");
+  portfolioScreen?.querySelector(".holdings-section")?.classList.add("hidden");
+  portfolioScreen?.querySelector(".hero-card")?.classList.add("hidden");
+  portfolioScreen?.querySelector(".metrics-row")?.classList.add("hidden");
+  portfolioScreen?.querySelector(".footer")?.classList.add("hidden");
+  portfolioScreen?.querySelector("#connect-banner")?.classList.add("hidden");
   show(investmentFormScreen);
+  window.scrollTo(0, 0);
 
   if (investment) {
     setText(investmentFormTitle, "Edit investment");
@@ -1279,9 +1282,10 @@ function openInvestmentForm(type = null, investment = null) {
 
 function closeInvestmentForm() {
   hide(investmentFormScreen);
-  show(holdingsList.closest(".holdings-section"));
-  document.querySelector(".hero-card")?.classList.remove("hidden");
-  document.querySelector(".metrics-row")?.classList.remove("hidden");
+  portfolioScreen?.querySelector(".holdings-section")?.classList.remove("hidden");
+  portfolioScreen?.querySelector(".hero-card")?.classList.remove("hidden");
+  portfolioScreen?.querySelector(".metrics-row")?.classList.remove("hidden");
+  portfolioScreen?.querySelector(".footer")?.classList.remove("hidden");
   resetInvestmentForm();
 }
 

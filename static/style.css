@@ -780,6 +780,14 @@ body {
   font-size: 0.875rem;
   font-weight: 600;
   cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.add-investment-btn {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0.5rem 0.75rem;
 }
 
 .budget-bar {
@@ -1256,8 +1264,26 @@ body {
   margin-top: 0.25rem;
 }
 
-.investment-form {
-  margin-top: 0.5rem;
+.investment-form-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: var(--bg);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding:
+    calc(1rem + env(safe-area-inset-top))
+    calc(1.125rem + env(safe-area-inset-right))
+    calc(1.5rem + env(safe-area-inset-bottom))
+    calc(1.125rem + env(safe-area-inset-left));
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -10%, var(--bg-glow), transparent),
+    var(--bg);
+}
+
+.investment-form-overlay:not(.hidden) {
+  display: flex;
+  flex-direction: column;
 }
 
 .investment-form-header {

@@ -10,7 +10,7 @@
   <link rel="manifest" href="/static/manifest.json">
   <link rel="apple-touch-icon" href="/static/icon-192.png">
   <link rel="icon" href="/static/icon-192.png" type="image/png">
-  <link rel="stylesheet" href="/static/style.css?v=5">
+  <link rel="stylesheet" href="/static/style.css?v=6">
   <title>Brain</title>
 </head>
 <body>
@@ -89,18 +89,18 @@
         <p>Connect Robinhood or add India investments to see your portfolio.</p>
         <div class="connect-banner-actions">
           <button id="connect-btn" class="btn primary">Connect Robinhood</button>
-          <button id="connect-add-investment-btn" type="button" class="btn">Add investment</button>
+          <button id="connect-add-investment-btn" type="button" class="btn">+Add</button>
         </div>
       </div>
 
       <div class="holdings-section">
         <div class="holdings-header">
-          <button id="add-investment-btn" type="button" class="btn text">+ Add investment</button>
+          <button id="add-investment-btn" type="button" class="btn text add-investment-btn">+Add</button>
         </div>
         <div id="holdings-list" class="holdings-groups"></div>
       </div>
 
-      <section id="investment-form-screen" class="investment-form hidden" aria-label="Add investment">
+      <section id="investment-form-screen" class="investment-form-overlay hidden" aria-label="Add investment">
         <div class="investment-form-header">
           <button id="investment-form-back" type="button" class="btn icon" aria-label="Back">
             <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -416,6 +416,6 @@
       <div class="spinner"></div>
     </div>
   </div>
-  <script src="/static/app.js?v=12"></script>
+  <script src="/static/app.js?v=13"></script>
 </body>
 </html>
