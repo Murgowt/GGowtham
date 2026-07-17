@@ -1,4 +1,5 @@
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -977,17 +978,30 @@ def _mock_spending(*, days: int) -> SpendingData:
     )
 
 
-def _fetch_live(*, days: int, splitwise_txns: list[dict] | None = None, force_plaid_refresh: bool = False) -> SpendingData:
-    now = now_app()
-    plaid_txns: list[dict] = []
-
+def _fetch_plaid_transactions(*, days: int, force_refresh: bool = False) -> list[dict]:
     try:
-        plaid_txns = plaid_client.fetch_plaid_transactions(days=days, force_refresh=force_plaid_refresh)
+        return plaid_client.fetch_plaid_transactions(days=days, force_refresh=force_refresh)
     except Exception:
         logger.exception("Plaid fetch failed")
+        return []
+
+
+def _fetch_live(*, days: int, splitwise_txns: list[dict] | None = None, force_plaid_refresh: bool = False) -> SpendingData:
+    now = now_app()
 
     if splitwise_txns is None:
-        splitwise_txns = _fetch_splitwise(days=days)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            splitwise_future = executor.submit(_fetch_splitwise, days=days)
+            plaid_future = executor.submit(
+                _fetch_plaid_transactions,
+                days=days,
+                force_refresh=force_plaid_refresh,
+            )
+            splitwise_txns = splitwise_future.result()
+            plaid_txns = plaid_future.result()
+    else:
+        plaid_txns = _fetch_plaid_transactions(days=days, force_refresh=force_plaid_refresh)
+
     result = _build_spending(plaid_txns, splitwise_txns, now=now, source="live")
     save_spending_snapshot(result.transactions, result.summary)
     return result
@@ -1014,7 +1028,6 @@ def get_spending(*, force_refresh: bool = False, days: int = 30) -> SpendingData
 
     now = now_app()
     days = _fetch_days(now, days)
-    splitwise_txns = _fetch_splitwise(days=days)
 
     has_any_source = plaid_client.has_connection() or splitwise_client.is_configured()
     if not has_any_source:
@@ -1029,9 +1042,22 @@ def get_spending(*, force_refresh: bool = False, days: int = 30) -> SpendingData
             source="empty",
         )
 
+    if not force_refresh:
+        snapshot = get_latest_spending_snapshot()
+        if snapshot:
+            return _snapshot_to_spending(snapshot)
+        cached_plaid = plaid_client.read_cached_plaid_transactions(days=days)
+        if cached_plaid:
+            return _build_spending(
+                cached_plaid,
+                [],
+                now=now,
+                source="cache",
+                cached=True,
+            )
+
     return _fetch_live(
         days=days,
-        splitwise_txns=splitwise_txns,
         force_plaid_refresh=force_refresh,
     )
 

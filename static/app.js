@@ -421,7 +421,6 @@ function setBudgetView(view) {
   if (view === "spend") {
     show(budgetSpendView);
     hide(budgetIncomeView);
-    loadSpending(true, { silent: true });
   } else {
     hide(budgetSpendView);
     show(budgetIncomeView);
@@ -767,8 +766,11 @@ function setActiveTab(tab) {
 
 function startSpendPolling() {
   stopSpendPolling();
+  let pollCount = 0;
   spendPollTimer = setInterval(() => {
-    if (activeTab === "budget" && budgetView === "spend") loadSpending(true, { silent: true });
+    if (activeTab !== "budget" || budgetView !== "spend") return;
+    pollCount += 1;
+    loadSpending(pollCount % 4 === 0, { silent: true });
   }, SPEND_POLL_MS);
 }
 
@@ -823,7 +825,7 @@ function showSettings(fromTab = activeTab) {
 function showMainFromSettings() {
   if (settingsReturnTab === "budget") {
     showBudget();
-    loadSpending(true);
+    loadSpendingSWR();
   } else if (settingsReturnTab === "goals") {
     showGoals();
   } else {
@@ -1185,24 +1187,6 @@ async function sendTestNotification() {
   }
 }
 
-async function checkConnection() {
-  const status = await api("/api/connection/status");
-  if (!status.has_holdings) {
-    show(connectBanner);
-    holdingsList.innerHTML = "";
-    clearSummary();
-    updatedAtEl.textContent = "";
-    hide(fxRateEl);
-    statusEl.classList.add("offline");
-    statusTextEl.textContent = status.manual_count > 0 ? "Unable to load" : "Not connected";
-    return false;
-  }
-  if (!status.connected && status.manual_count > 0) {
-    hide(connectBanner);
-  }
-  return true;
-}
-
 let mfSearchTimer = null;
 
 function resetInvestmentForm() {
@@ -1400,32 +1384,51 @@ async function searchMfSchemes(query) {
   }
 }
 
-async function loadPortfolio(refresh = false) {
-  setLoading(true);
+async function loadPortfolio(refresh = false, { silent = false } = {}) {
+  if (!silent) setLoading(true);
   try {
-    const connected = await checkConnection();
-    if (!connected) return;
     const data = await api(`/api/portfolio${refresh ? "?refresh=true" : ""}`);
+    if (!data.has_holdings) {
+      show(connectBanner);
+      holdingsList.innerHTML = "";
+      clearSummary();
+      updatedAtEl.textContent = "";
+      hide(fxRateEl);
+      statusEl.classList.add("offline");
+      statusTextEl.textContent = data.manual_count > 0 ? "Unable to load" : "Not connected";
+      return;
+    }
+    if (!data.connected && data.manual_count > 0) {
+      hide(connectBanner);
+    }
     renderPortfolio(data);
   } catch (err) {
-    if (err.message.includes("not connected")) {
+    if (err.message.includes("not connected") || err.message.includes("Connect Robinhood")) {
       show(connectBanner);
-      statusEl.classList.add("offline");
-      statusTextEl.textContent = err.message;
-    } else {
-      statusEl.classList.add("offline");
-      statusTextEl.textContent = err.message;
+      holdingsList.innerHTML = "";
+      clearSummary();
+      updatedAtEl.textContent = "";
+      hide(fxRateEl);
     }
+    statusEl.classList.add("offline");
+    statusTextEl.textContent = err.message;
   } finally {
-    setLoading(false);
+    if (!silent) setLoading(false);
   }
+}
+
+async function loadPortfolioSWR() {
+  await loadPortfolio(false);
+  loadPortfolio(true, { silent: true }).catch(() => {});
 }
 
 async function loadSpending(refresh = false, { silent = false } = {}) {
   if (!silent) setLoading(true);
   try {
-    const status = await api("/api/spending/status");
-    const hasSource = status.plaid_connected || status.splitwise_configured || status.mock;
+    const params = new URLSearchParams();
+    if (refresh) params.set("refresh", "true");
+    const data = await api(`/api/spending/transactions?${params}`);
+    const hasSource = data.plaid_connected || data.splitwise_configured || data.mock;
     if (!hasSource) {
       show(spendConnectBanner);
       transactionsList.innerHTML = "";
@@ -1438,10 +1441,6 @@ async function loadSpending(refresh = false, { silent = false } = {}) {
     }
 
     hide(spendConnectBanner);
-    const params = new URLSearchParams();
-    if (refresh) params.set("refresh", "true");
-    params.set("_", String(Date.now()));
-    const data = await api(`/api/spending/transactions?${params}`);
     renderSpending(data);
   } catch (err) {
     spendStatusEl.classList.add("offline");
@@ -1449,6 +1448,11 @@ async function loadSpending(refresh = false, { silent = false } = {}) {
   } finally {
     if (!silent) setLoading(false);
   }
+}
+
+async function loadSpendingSWR() {
+  await loadSpending(false);
+  loadSpending(true, { silent: true }).catch(() => {});
 }
 
 async function connectRobinhood() {
@@ -1589,12 +1593,12 @@ async function checkAuth() {
       await registerServiceWorker();
       if (openTab === "spend" || openTab === "budget") {
         showBudget();
-        await loadSpending(true);
+        await loadSpendingSWR();
       } else if (openTab === "goals") {
         showGoals();
       } else {
         showInvest();
-        await loadPortfolio(true);
+        await loadPortfolioSWR();
       }
     } else {
       show(loginScreen);
@@ -1618,10 +1622,10 @@ document.querySelectorAll(".tab-nav .tab:not(.disabled)").forEach((btn) => {
     const tab = btn.dataset.tab;
     if (tab === "invest") {
       showInvest();
-      await loadPortfolio();
+      await loadPortfolioSWR();
     } else if (tab === "budget") {
       showBudget();
-      if (budgetView === "spend") await loadSpending(true);
+      if (budgetView === "spend") await loadSpendingSWR();
     } else if (tab === "goals") {
       showGoals();
     }
@@ -1638,7 +1642,7 @@ loginForm.addEventListener("submit", async (e) => {
     hide(loginScreen);
     showInvest();
     await registerServiceWorker();
-    await loadPortfolio();
+    await loadPortfolioSWR();
   } catch {
     show(loginError);
     loginError.textContent = "Invalid PIN";
@@ -1677,6 +1681,7 @@ testNotificationBtn.addEventListener("click", sendTestNotification);
 document.querySelectorAll(".budget-sub-tab").forEach((btn) => {
   btn.addEventListener("click", () => {
     setBudgetView(btn.dataset.budgetView);
+    if (btn.dataset.budgetView === "spend") loadSpendingSWR();
   });
 });
 
@@ -1694,7 +1699,7 @@ goalDeleteBtn?.addEventListener("click", deleteGoal);
 
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible" && activeTab === "budget" && budgetView === "spend") {
-    loadSpending(true, { silent: true });
+    loadSpending(false, { silent: true });
   }
 });
 

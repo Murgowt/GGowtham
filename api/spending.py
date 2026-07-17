@@ -63,6 +63,7 @@ def spending_transactions(request: Request, response: Response, refresh: bool = 
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
+    status = get_spending_status()
     return {
         "transactions": data.transactions,
         "summary": data.summary,
@@ -70,6 +71,9 @@ def spending_transactions(request: Request, response: Response, refresh: bool = 
         "cached": data.cached,
         "source": data.source,
         "updated_at": data.updated_at.isoformat(),
+        "plaid_connected": status["plaid_connected"],
+        "splitwise_configured": status["splitwise_configured"],
+        "mock": status["mock"],
     }
 
 

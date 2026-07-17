@@ -361,6 +361,14 @@ def get_portfolio(*, force_refresh: bool = False) -> PortfolioData:
             source="cache",
         )
 
+    if not force_refresh:
+        snapshot = get_latest_snapshot()
+        if snapshot:
+            snap = _snapshot_to_portfolio(snapshot)
+            _cache = snap
+            _cache_at = now
+            return snap
+
     live = _fetch_live_holdings()
     if live:
         _cache = live

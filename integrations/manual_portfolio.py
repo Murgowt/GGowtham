@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime
 
 from db.database import list_manual_investments, update_manual_investment_details
@@ -67,22 +68,27 @@ def _value_fd(row, details: dict, as_of: date) -> dict:
     }
 
 
-def _value_mf(row, details: dict) -> dict:
+def _value_mf(row, details: dict, *, force_refresh: bool = False) -> dict:
     scheme_code = int(details["scheme_code"])
     units = float(details.get("units") or 0)
     purchase_nav = float(details.get("purchase_nav") or 0)
+    invested_inr = float(row.invested_inr)
     if units <= 0:
         raise ValueError(f"MF {row.id} missing units")
 
-    quote = get_mf_nav(scheme_code)
+    quote = None
     stale = False
-    if quote:
-        nav = quote["nav"]
-        details["last_quote"] = quote
-        update_manual_investment_details(row.id, details)
+    if force_refresh:
+        quote = get_mf_nav(scheme_code)
+        if quote:
+            details["last_quote"] = quote
+            update_manual_investment_details(row.id, details)
     elif details.get("last_quote"):
-        nav = float(details["last_quote"]["nav"])
+        quote = details["last_quote"]
         stale = True
+
+    if quote:
+        nav = float(quote["nav"])
     elif purchase_nav > 0:
         nav = purchase_nav
         stale = True
@@ -91,7 +97,6 @@ def _value_mf(row, details: dict) -> dict:
         stale = True
 
     value_inr = round(units * nav, 2)
-    invested_inr = float(row.invested_inr)
     if purchase_nav > 0:
         cost_basis = round(units * purchase_nav, 2)
     else:
@@ -122,7 +127,7 @@ def _value_mf(row, details: dict) -> dict:
     }
 
 
-def _value_stock(row, details: dict) -> dict:
+def _value_stock(row, details: dict, *, force_refresh: bool = False) -> dict:
     symbol = details.get("symbol") or row.name
     exchange = details.get("exchange")
     quantity = float(details.get("quantity") or 0)
@@ -130,17 +135,21 @@ def _value_stock(row, details: dict) -> dict:
     if quantity <= 0 or avg_buy <= 0:
         raise ValueError(f"Stock {row.id} missing quantity or avg_buy_price")
 
-    quote = get_stock_quote(symbol, exchange=exchange)
+    quote = None
     stale = False
-    if quote:
-        price = quote["price"]
-        details["last_quote"] = quote
-        if not details.get("symbol"):
-            details["symbol"] = quote["symbol"]
-        update_manual_investment_details(row.id, details)
+    if force_refresh:
+        quote = get_stock_quote(symbol, exchange=exchange)
+        if quote:
+            details["last_quote"] = quote
+            if not details.get("symbol"):
+                details["symbol"] = quote["symbol"]
+            update_manual_investment_details(row.id, details)
     elif details.get("last_quote"):
-        price = float(details["last_quote"]["price"])
+        quote = details["last_quote"]
         stale = True
+
+    if quote:
+        price = float(quote["price"])
     elif avg_buy > 0:
         price = avg_buy
         stale = True
@@ -173,15 +182,15 @@ def _value_stock(row, details: dict) -> dict:
     }
 
 
-def _value_investment(row, as_of: date) -> dict | None:
+def _value_investment(row, as_of: date, *, force_refresh: bool = False) -> dict | None:
     details = dict(row.details_json or {})
     try:
         if row.type == "fd":
             return _value_fd(row, details, as_of)
         if row.type == "mf":
-            return _value_mf(row, details)
+            return _value_mf(row, details, force_refresh=force_refresh)
         if row.type == "stock":
-            return _value_stock(row, details)
+            return _value_stock(row, details, force_refresh=force_refresh)
     except Exception:
         logger.exception("Failed to value manual investment %s", row.id)
     return None
@@ -193,29 +202,46 @@ def _inr_to_usd(amount_inr: float, fx_rate: float) -> float:
     return round(amount_inr / fx_rate, 2)
 
 
+def _holding_from_row(row, valued: dict, fx_rate: float) -> dict:
+    return {
+        **valued,
+        "id": row.id,
+        "name": row.name,
+        "value": _inr_to_usd(valued["value_inr"], fx_rate),
+        "invested": _inr_to_usd(valued["invested_inr"], fx_rate),
+        "pnl": _inr_to_usd(valued["pnl_inr"], fx_rate),
+    }
+
+
 def get_manual_holdings(*, force_refresh: bool = False) -> tuple[list[dict], float, datetime | None]:
     """Return INR holdings, USD/INR rate, and FX timestamp."""
     rows = list_manual_investments()
     if not rows:
         return [], 0.0, None
 
-    fx_rate, fx_at = get_usd_inr_rate(force_refresh=force_refresh)
     as_of = date.today()
     holdings: list[dict] = []
 
-    for row in rows:
-        valued = _value_investment(row, as_of)
-        if not valued:
-            continue
-        holding = {
-            **valued,
-            "id": row.id,
-            "name": row.name,
-            "value": _inr_to_usd(valued["value_inr"], fx_rate),
-            "invested": _inr_to_usd(valued["invested_inr"], fx_rate),
-            "pnl": _inr_to_usd(valued["pnl_inr"], fx_rate),
-        }
-        holdings.append(holding)
+    if force_refresh:
+        fx_rate, fx_at = get_usd_inr_rate(force_refresh=True)
+        for row in rows:
+            valued = _value_investment(row, as_of, force_refresh=True)
+            if valued:
+                holdings.append(_holding_from_row(row, valued, fx_rate))
+    else:
+        max_workers = min(8, len(rows) + 1)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            fx_future = executor.submit(get_usd_inr_rate, force_refresh=False)
+            valued_futures = {
+                executor.submit(_value_investment, row, as_of, force_refresh=False): row
+                for row in rows
+            }
+            fx_rate, fx_at = fx_future.result()
+            for future in as_completed(valued_futures):
+                row = valued_futures[future]
+                valued = future.result()
+                if valued:
+                    holdings.append(_holding_from_row(row, valued, fx_rate))
 
     holdings.sort(key=lambda h: h["value"], reverse=True)
     return holdings, fx_rate, fx_at

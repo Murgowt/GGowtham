@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -55,6 +56,16 @@ def _merge_holdings(us: list[dict], india: list[dict]) -> list[dict]:
     return combined
 
 
+def _fetch_us_portfolio(*, force_refresh: bool) -> tuple[PortfolioData | None, str | None]:
+    if not (is_configured() and has_brokerage_connection()):
+        return None, None
+    try:
+        return get_snaptrade_portfolio(force_refresh=force_refresh), None
+    except Exception as exc:
+        logger.exception("US portfolio fetch failed")
+        return None, str(exc)
+
+
 def get_merged_portfolio(*, force_refresh: bool = False) -> MergedPortfolioData:
     now = now_app()
     manual_count = count_manual_investments()
@@ -77,17 +88,15 @@ def get_merged_portfolio(*, force_refresh: bool = False) -> MergedPortfolioData:
             fx_as_of=fx_at,
         )
 
-    us_data: PortfolioData | None = None
-    us_error: str | None = None
-
-    if is_configured() and has_brokerage_connection():
-        try:
-            us_data = get_snaptrade_portfolio(force_refresh=force_refresh)
-        except Exception as exc:
-            logger.exception("US portfolio fetch failed")
-            us_error = str(exc)
-
-    india, fx_rate, fx_at = get_manual_holdings(force_refresh=force_refresh)
+    if force_refresh:
+        us_data, us_error = _fetch_us_portfolio(force_refresh=True)
+        india, fx_rate, fx_at = get_manual_holdings(force_refresh=True)
+    else:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            us_future = executor.submit(_fetch_us_portfolio, force_refresh=False)
+            india_future = executor.submit(get_manual_holdings, force_refresh=False)
+            us_data, us_error = us_future.result()
+            india, fx_rate, fx_at = india_future.result()
 
     if us_data:
         holdings = _merge_holdings(us_data.holdings, india)

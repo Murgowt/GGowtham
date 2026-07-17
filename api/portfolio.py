@@ -15,6 +15,25 @@ router = APIRouter(prefix="/api", tags=["portfolio"])
 @router.get("/portfolio")
 def portfolio(request: Request, refresh: bool = False):
     require_auth(request)
+    manual_count = count_manual_investments()
+    connected = has_brokerage_connection()
+    if not connected and manual_count == 0:
+        return {
+            "total_value": 0,
+            "total_invested": 0,
+            "total_pnl": None,
+            "holdings": [],
+            "cached": False,
+            "source": "empty",
+            "updated_at": "",
+            "fx_rate": None,
+            "fx_as_of": None,
+            "manual_count": 0,
+            "connected": connected,
+            "configured": is_configured(),
+            "has_holdings": False,
+        }
+
     try:
         data = get_merged_portfolio(force_refresh=refresh)
     except RuntimeError as exc:
@@ -30,7 +49,10 @@ def portfolio(request: Request, refresh: bool = False):
         "updated_at": data.updated_at.isoformat(),
         "fx_rate": data.fx_rate,
         "fx_as_of": data.fx_as_of.isoformat() if data.fx_as_of else None,
-        "manual_count": count_manual_investments(),
+        "manual_count": manual_count,
+        "connected": connected,
+        "configured": is_configured(),
+        "has_holdings": True,
     }
 
 

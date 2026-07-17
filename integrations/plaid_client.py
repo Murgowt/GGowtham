@@ -418,7 +418,36 @@ def _sync_item_transactions(
     return _drop_superseded_pending(in_window), current_cursor, store
 
 
+def read_cached_plaid_transactions(*, days: int = 30) -> list[dict]:
+    """Return stored Plaid transactions without calling Plaid APIs."""
+    if settings.mock_integrations or not has_connection():
+        return []
+
+    start = date.today() - timedelta(days=days)
+    end = date.today() + timedelta(days=1)
+    merged: list[dict] = []
+    seen: set[str] = set()
+
+    for item in list_plaid_items():
+        cache = dict(item.transactions_cache_json or {})
+        in_window = [
+            txn for txn in cache.values()
+            if start <= _txn_date(txn) <= end
+        ]
+        for txn in _drop_superseded_pending(in_window):
+            if txn["id"] not in seen:
+                seen.add(txn["id"])
+                merged.append(txn)
+
+    return merged
+
+
 def fetch_plaid_transactions(*, days: int = 30, force_refresh: bool = False) -> list[dict]:
+    if not force_refresh:
+        cached = read_cached_plaid_transactions(days=days)
+        if cached:
+            return cached
+
     if settings.mock_integrations:
         return []
 
