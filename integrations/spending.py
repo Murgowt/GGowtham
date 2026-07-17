@@ -323,15 +323,14 @@ def _billable_splitwise_shares(period_txns: list[dict]) -> list[dict]:
     ]
 
 
-def _plaid_budget_spend(
-    period_txns: list[dict],
-    billable_shares: list[dict],
-) -> tuple[float, float, float]:
+def _plaid_budget_spend(period_txns: list[dict]) -> tuple[float, float, float]:
     """
     Plaid debits that count toward the monthly budget meter.
 
-    - All card outflows (Bilt on card → your rent share only, same as period spend).
-    - Bank outflows only when Bilt housing (Chase debit rent); other bank debits excluded.
+    - All card outflows (including Bilt on card, at the debited amount).
+    - Bank outflows only for Bilt housing — the full Chase debit (e.g. $1,058).
+      Roommate portions are offset later via Splitwise rent credits in budget_used.
+    - Other bank debits are excluded.
     """
     card_spend = 0.0
     rent_spend = 0.0
@@ -347,7 +346,6 @@ def _plaid_budget_spend(
             continue
         out = abs(amt)
         if _is_bilt_housing(txn):
-            out = _bilt_counted_amount(out, billable_shares)
             rent_counted += out
             if source == "bank":
                 rent_spend += out
@@ -791,9 +789,10 @@ def compute_budget_status(
     """
     Budget tracking for the current billing period (6th–5th).
 
-    Used = card purchases + Bilt bank rent (your share) − Splitwise net.
-    Bilt rent uses the same your-share logic as period spend (~$956 cap, minus
-    roommate fronting on Splitwise). Other bank debits are not counted here.
+    Used = card purchases + full Bilt housing debit − Splitwise net.
+    The Bilt bank payment counts at the full debited amount (e.g. $1,058); the
+    Splitwise rent split then credits back roommates' shares. Other bank debits
+    are not counted here.
 
     Remaining = budget − used.
 
@@ -806,8 +805,7 @@ def compute_budget_status(
     ]
     period_txns = [t for t in period_all if t.get("id") not in excluded]
 
-    billable_shares = _billable_splitwise_shares(period_txns)
-    card_spend, rent_spend, _rent_counted = _plaid_budget_spend(period_txns, billable_shares)
+    card_spend, rent_spend, _rent_counted = _plaid_budget_spend(period_txns)
 
     splitwise_net = sum(
         _splitwise_net_amount(t)

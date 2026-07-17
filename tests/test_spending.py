@@ -442,10 +442,10 @@ def test_budget_status_includes_bilt_bank_rent():
     ])
     status = compute_budget_status(txns, period_start, period_end, 2000.0)
     assert status["budget_card_spend"] == 200.0
-    assert status["budget_rent_spend"] == 951.2
+    assert status["budget_rent_spend"] == 1901.95
     assert status["budget_splitwise_net"] == 950.75
-    assert status["budget_used"] == 200.45
-    assert status["budget_remaining"] == 1799.55
+    assert status["budget_used"] == 1151.2
+    assert status["budget_remaining"] == 848.8
 
 
 def test_budget_excludes_settle_balances():
