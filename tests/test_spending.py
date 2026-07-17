@@ -415,6 +415,39 @@ def test_budget_status_user_exclusion():
     assert excluded["budget_user_excluded_count"] == 1
 
 
+def test_budget_status_includes_bilt_bank_rent():
+    from integrations.spending import apply_spending_rules, compute_budget_status, iter_billing_periods, HISTORY_EPOCH
+
+    now = now_app()
+    period_start, period_end = next(iter_billing_periods(HISTORY_EPOCH, now))
+    txns = apply_spending_rules([
+        _card(amount=-200.0, date=period_start.isoformat()),
+        {
+            "id": "bank:rent",
+            "source": "bank",
+            "date": period_start.isoformat(),
+            "amount": -1901.95,
+            "description": "BILT CARD HOUSING PPD ID: 1844372402",
+            "plaid_category_detailed": "RENT_AND_UTILITIES_RENT",
+        },
+        _share(
+            amount=950.75,
+            net_balance=950.75,
+            owed_share=0.0,
+            paid_share=950.75,
+            description="Rent - july",
+            category="Rent",
+            date=period_start.isoformat(),
+        ),
+    ])
+    status = compute_budget_status(txns, period_start, period_end, 2000.0)
+    assert status["budget_card_spend"] == 200.0
+    assert status["budget_rent_spend"] == 951.2
+    assert status["budget_splitwise_net"] == 950.75
+    assert status["budget_used"] == 200.45
+    assert status["budget_remaining"] == 1799.55
+
+
 def test_budget_excludes_settle_balances():
     from integrations.spending import apply_spending_rules, compute_budget_status, iter_billing_periods, HISTORY_EPOCH
 

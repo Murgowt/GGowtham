@@ -313,6 +313,51 @@ def _splitwise_net_amount(share: dict) -> float:
     return float(share.get("net_balance", share.get("amount", 0)) or 0)
 
 
+def _billable_splitwise_shares(period_txns: list[dict]) -> list[dict]:
+    return [
+        t for t in period_txns
+        if t.get("source") == "splitwise"
+        and t.get("txn_type") == "share"
+        and not _is_settlement_share(t)
+        and not _is_debt_share(t)
+    ]
+
+
+def _plaid_budget_spend(
+    period_txns: list[dict],
+    billable_shares: list[dict],
+) -> tuple[float, float, float]:
+    """
+    Plaid debits that count toward the monthly budget meter.
+
+    - All card outflows (Bilt on card → your rent share only, same as period spend).
+    - Bank outflows only when Bilt housing (Chase debit rent); other bank debits excluded.
+    """
+    card_spend = 0.0
+    rent_spend = 0.0
+    rent_counted = 0.0
+    for txn in period_txns:
+        if txn.get("txn_type") in ("investment", "transfer", "cc_payment"):
+            continue
+        amt = _txn_amount(txn)
+        if amt >= 0:
+            continue
+        source = txn.get("source")
+        if source not in ("bank", "card"):
+            continue
+        out = abs(amt)
+        if _is_bilt_housing(txn):
+            out = _bilt_counted_amount(out, billable_shares)
+            rent_counted += out
+            if source == "bank":
+                rent_spend += out
+            else:
+                card_spend += out
+        elif source == "card":
+            card_spend += out
+    return card_spend, rent_spend, rent_counted
+
+
 def compute_period_spend(
     transactions: list[dict],
     period_start: datetime,
@@ -335,14 +380,7 @@ def compute_period_spend(
         and t.get("id") not in excluded
     ]
 
-    splitwise_shares = [
-        t for t in period_txns
-        if t.get("source") == "splitwise" and t.get("txn_type") == "share"
-    ]
-    billable_shares = [
-        t for t in splitwise_shares
-        if not _is_settlement_share(t) and not _is_debt_share(t)
-    ]
+    billable_shares = _billable_splitwise_shares(period_txns)
     splitwise_net = round(sum(_splitwise_net_amount(t) for t in billable_shares), 2)
 
     plaid_debits = [
@@ -753,7 +791,10 @@ def compute_budget_status(
     """
     Budget tracking for the current billing period (6th–5th).
 
-    Used = card purchases − Splitwise net (all shares: + increases remaining, − decreases it).
+    Used = card purchases + Bilt bank rent (your share) − Splitwise net.
+    Bilt rent uses the same your-share logic as period spend (~$956 cap, minus
+    roommate fronting on Splitwise). Other bank debits are not counted here.
+
     Remaining = budget − used.
 
     Settle-balances entries and manually excluded transactions are skipped.
@@ -765,13 +806,8 @@ def compute_budget_status(
     ]
     period_txns = [t for t in period_all if t.get("id") not in excluded]
 
-    card_spend = sum(
-        abs(_txn_amount(t))
-        for t in period_txns
-        if t.get("source") == "card"
-        and _txn_amount(t) < 0
-        and t.get("txn_type") not in ("investment", "transfer", "cc_payment")
-    )
+    billable_shares = _billable_splitwise_shares(period_txns)
+    card_spend, rent_spend, _rent_counted = _plaid_budget_spend(period_txns, billable_shares)
 
     splitwise_net = sum(
         _splitwise_net_amount(t)
@@ -781,7 +817,7 @@ def compute_budget_status(
         and not _is_splitwise_settlement(t)
     )
 
-    budget_used = round(card_spend - splitwise_net, 2)
+    budget_used = round(card_spend + rent_spend - splitwise_net, 2)
     budget_remaining = round(budget - budget_used, 2)
 
     return {
@@ -789,6 +825,7 @@ def compute_budget_status(
         "budget_used": budget_used,
         "budget_remaining": budget_remaining,
         "budget_card_spend": round(card_spend, 2),
+        "budget_rent_spend": round(rent_spend, 2),
         "budget_splitwise_net": round(splitwise_net, 2),
         "budget_splitwise_expenses": round(
             sum(
